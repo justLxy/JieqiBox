@@ -153,7 +153,7 @@
   const currentCommand = ref('')
   const commandHistory = ref<string[]>([])
   const historyIndex = ref(-1)
-  const lastProcessedOutputIndex = ref(-1)
+  const lastProcessedOutputId = ref(-1)
 
   // Refs
   const terminalOutput = ref<HTMLElement | null>(null)
@@ -265,9 +265,7 @@
   // Clear terminal
   const clearTerminal = () => {
     terminalLines.value = []
-    lastProcessedOutputIndex.value = engineOutput.value
-      ? engineOutput.value.length - 1
-      : -1
+    lastProcessedOutputId.value = engineOutput.value?.at(-1)?.id ?? -1
     addTerminalLine('response', 'Terminal cleared')
   }
 
@@ -282,14 +280,11 @@
   const handleEngineOutput = () => {
     if (!engineOutput.value || !isVisible.value) return
 
-    const currentOutputLength = engineOutput.value.length
+    const newLines = engineOutput.value.filter(
+      (line: any) => line.id > lastProcessedOutputId.value
+    )
 
-    // Only process new outputs since last processed index
-    if (currentOutputLength > lastProcessedOutputIndex.value + 1) {
-      const newLines = engineOutput.value.slice(
-        lastProcessedOutputIndex.value + 1
-      )
-
+    if (newLines.length > 0) {
       newLines.forEach((line: any) => {
         if (line.kind === 'recv') {
           addTerminalLine('response', line.text)
@@ -298,8 +293,8 @@
         }
       })
 
-      // Update the last processed index
-      lastProcessedOutputIndex.value = currentOutputLength - 1
+      // IDs remain valid when the bounded engine-log buffer discards old rows.
+      lastProcessedOutputId.value = newLines[newLines.length - 1].id
 
       // Auto-scroll to bottom
       nextTick(() => {
@@ -309,7 +304,7 @@
   }
 
   // Watch for changes in engine output
-  watch(() => engineOutput.value, handleEngineOutput, { deep: true })
+  watch(() => engineOutput.value, handleEngineOutput)
 
   // Watch dialog visibility
   watch(isVisible, newVal => {
@@ -317,10 +312,8 @@
       // Set global flag to indicate UCI terminal is active
       ;(window as any).__UCI_TERMINAL_ACTIVE__ = true
 
-      // Initialize last processed output index when dialog opens
-      lastProcessedOutputIndex.value = engineOutput.value
-        ? engineOutput.value.length - 1
-        : -1
+      // Initialize from the latest retained row rather than an array index.
+      lastProcessedOutputId.value = engineOutput.value?.at(-1)?.id ?? -1
 
       // Focus on input when dialog opens
       nextTick(() => {

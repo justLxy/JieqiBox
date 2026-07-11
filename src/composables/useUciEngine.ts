@@ -17,13 +17,15 @@ import {
 } from '@/utils/advancedScriptInterpreter'
 
 export interface EngineLine {
+  id: number
   text: string
   kind: 'sent' | 'recv'
 }
 
 export function useUciEngine(generateFen: () => string, gameState: any) {
   const { t } = useI18n()
-  const { useNewFenFormat, validationTimeout } = useInterfaceSettings()
+  const { useNewFenFormat, validationTimeout, engineLogLineLimit } =
+    useInterfaceSettings()
   const { playSoundLoop, stopSoundLoop } = useSoundEffects()
   const { convertFenFormat } = gameState
   const engineOutput = ref<EngineLine[]>([])
@@ -77,8 +79,22 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
   let lastProcessedTime = 0
   const OUTPUT_THROTTLE_DELAY = 50 // Process output every 50ms maximum
   const MATE_OUTPUT_THROTTLE_DELAY = 300 // Slower processing for mate situations
+  let nextEngineOutputId = 0
 
   let unlisten: (() => void) | null = null
+
+  const appendEngineOutput = (lines: Array<Omit<EngineLine, 'id'>>) => {
+    if (lines.length === 0) return
+
+    const maxLines = Math.max(1, Math.floor(engineLogLineLimit.value || 256))
+    const nextOutput = [
+      ...engineOutput.value,
+      ...lines.map(line => ({ ...line, id: nextEngineOutputId++ })),
+    ]
+
+    engineOutput.value =
+      nextOutput.length > maxLines ? nextOutput.slice(-maxLines) : nextOutput
+  }
 
   /* ---------- Helper Functions ---------- */
   const isDarkPieceMove = (uciMove: string): boolean => {
@@ -150,18 +166,13 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
       return
     }
 
-    // Process all pending lines with parsing logic
-    pendingOutputLines.forEach(raw_ln => {
-      engineOutput.value.push({ text: raw_ln, kind: 'recv' })
+    const outputLines = pendingOutputLines
+    pendingOutputLines = []
+    let hasLatestAnalysisUpdate = false
 
-      // Aggressive cleanup: limit engine output to prevent memory issues
-      if (engineOutput.value.length > 1000) {
-        console.log(
-          '[DEBUG] UCI_ENGINE: Clearing engine output to prevent memory issues'
-        )
-        engineOutput.value = engineOutput.value.slice(-500) // Keep last 500 lines
-      }
-
+    // Process the batch before publishing it so high-frequency info output
+    // causes only one reactive log update per throttle interval.
+    outputLines.forEach(raw_ln => {
       const ln = raw_ln.trim()
       if (!ln) return // Ignore empty lines after trimming
 
@@ -193,11 +204,11 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
         (ln.includes('score') || ln.includes(' pv '))
       ) {
         analysisLines[mpvIndex] = ln
-        // Join available lines by newline
-        analysis.value = analysisLines.filter(Boolean).join('\n')
+        hasLatestAnalysisUpdate = true
       }
 
       if (ln.startsWith('bestmove')) {
+        hasLatestAnalysisUpdate = false
         const parts = ln.split(' ')
         const mv = parts[1] ?? ''
         // Check if engine provided a ponder move
@@ -338,7 +349,12 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
       }
     })
 
-    pendingOutputLines = []
+    // Publish the latest MultiPV snapshot once per batch rather than after
+    // every info line. This avoids repeated joins and downstream re-renders.
+    if (hasLatestAnalysisUpdate) {
+      analysis.value = analysisLines.filter(Boolean).join('\n')
+    }
+    appendEngineOutput(outputLines.map(text => ({ text, kind: 'recv' })))
     lastProcessedTime = currentTime
     outputThrottleTimer = null
   }
@@ -526,7 +542,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
   /* ---------- Basic Send ---------- */
   const send = (cmd: string) => {
     // No longer check isEngineLoaded, as we need to send 'uci' before it's true
-    engineOutput.value.push({ text: cmd, kind: 'sent' })
+    appendEngineOutput([{ text: cmd, kind: 'sent' }])
 
     // Clear analysis lines when MultiPV setting changes to prevent stale data
     if (cmd.startsWith('setoption name MultiPV value ')) {
@@ -1101,7 +1117,9 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
   onMounted(async () => {
     // Central listener for all engine output for logging/display
     unlisten = await onEngineOutput(raw_ln => {
-      console.log(`[DEBUG] ENGINE_RAW_OUTPUT: ${raw_ln}`)
+      if (import.meta.env.DEV) {
+        console.debug(`[DEBUG] ENGINE_RAW_OUTPUT: ${raw_ln}`)
+      }
       queueOutputLine(raw_ln)
     })
 

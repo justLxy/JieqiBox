@@ -12,6 +12,7 @@ import { useInterfaceSettings } from './useInterfaceSettings'
 import { useSoundEffects } from './useSoundEffects'
 
 export interface JaiEngineLine {
+  id: number
   text: string
   kind: 'sent' | 'recv'
 }
@@ -29,7 +30,7 @@ export interface JaiOption {
 
 export function useJaiEngine(_generateFen: () => string, gameState: any) {
   const { t } = useI18n()
-  const { validationTimeout } = useInterfaceSettings()
+  const { validationTimeout, engineLogLineLimit } = useInterfaceSettings()
   const { playSoundLoop, stopSoundLoop } = useSoundEffects()
   const engineOutput = ref<JaiEngineLine[]>([])
   const isEngineLoaded = ref(false)
@@ -62,8 +63,22 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
   let pendingOutputLines: string[] = []
   let lastProcessedTime = 0
   const OUTPUT_THROTTLE_DELAY = 50 // Process output every 50ms maximum
+  let nextEngineOutputId = 0
 
   let unlisten: (() => void) | null = null
+
+  const appendEngineOutput = (lines: Array<Omit<JaiEngineLine, 'id'>>) => {
+    if (lines.length === 0) return
+
+    const maxLines = Math.max(1, Math.floor(engineLogLineLimit.value || 256))
+    const nextOutput = [
+      ...engineOutput.value,
+      ...lines.map(line => ({ ...line, id: nextEngineOutputId++ })),
+    ]
+
+    engineOutput.value =
+      nextOutput.length > maxLines ? nextOutput.slice(-maxLines) : nextOutput
+  }
 
   /* ---------- Output Throttling Functions ---------- */
   // Process pending output lines with throttling
@@ -85,18 +100,11 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
       return
     }
 
+    const outputLines = pendingOutputLines
+    pendingOutputLines = []
+
     // Process all pending lines with parsing logic
-    pendingOutputLines.forEach(raw_ln => {
-      engineOutput.value.push({ text: raw_ln, kind: 'recv' })
-
-      // Aggressive cleanup: limit engine output to prevent memory issues
-      if (engineOutput.value.length > 1000) {
-        console.log(
-          '[DEBUG] JAI_ENGINE: Clearing engine output to prevent memory issues'
-        )
-        engineOutput.value = engineOutput.value.slice(-500) // Keep last 500 lines
-      }
-
+    outputLines.forEach(raw_ln => {
       const ln = raw_ln.trim()
       if (!ln) return // Ignore empty lines after trimming
 
@@ -263,7 +271,7 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
       }
     })
 
-    pendingOutputLines = []
+    appendEngineOutput(outputLines.map(text => ({ text, kind: 'recv' })))
     lastProcessedTime = currentTime
     outputThrottleTimer = null
   }
@@ -466,7 +474,7 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
 
   /* ---------- Basic Send ---------- */
   const send = (cmd: string) => {
-    engineOutput.value.push({ text: cmd, kind: 'sent' })
+    appendEngineOutput([{ text: cmd, kind: 'sent' }])
 
     sendToEngine(cmd).catch(e => {
       console.warn('Failed to send to JAI engine:', e)
@@ -648,22 +656,11 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
   onMounted(async () => {
     // Central listener for all engine output for logging/display
     unlisten = await onEngineOutput(raw_ln => {
-      console.log(`[DEBUG] JAI_ENGINE_RAW_OUTPUT: ${raw_ln}`)
+      if (import.meta.env.DEV) {
+        console.debug(`[DEBUG] JAI_ENGINE_RAW_OUTPUT: ${raw_ln}`)
+      }
       queueOutputLine(raw_ln)
     })
-
-    // Set up periodic cleanup for match mode
-    const cleanupInterval = setInterval(() => {
-      if (isMatchRunning.value && engineOutput.value.length > 500) {
-        console.log(
-          '[DEBUG] JAI_ENGINE: Periodic cleanup - clearing old engine output'
-        )
-        engineOutput.value = engineOutput.value.slice(-250) // Keep last 250 lines
-      }
-    }, 30000) // Clean up every 30 seconds
-
-    // Store cleanup interval for later cleanup
-    ;(window as any).__JAI_CLEANUP_INTERVAL__ = cleanupInterval
 
     // Check if engine list is empty and clear last selected engine ID if needed
     const configManager = useConfigManager()
@@ -684,12 +681,6 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
     unlisten?.()
     killEngine() // Kill engine on component unmount
     resetThrottling()
-
-    // Clean up periodic cleanup interval
-    if ((window as any).__JAI_CLEANUP_INTERVAL__) {
-      clearInterval((window as any).__JAI_CLEANUP_INTERVAL__)
-      ;(window as any).__JAI_CLEANUP_INTERVAL__ = null
-    }
   })
 
   return {

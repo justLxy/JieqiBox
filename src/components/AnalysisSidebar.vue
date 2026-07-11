@@ -984,7 +984,7 @@
       <div class="engine-log" ref="engineLogElement">
         <div
           v-for="(ln, Idx) in currentEngineOutput"
-          :key="Idx"
+          :key="ln.id ?? Idx"
           :class="ln.kind === 'sent' ? 'line-sent' : 'line-recv'"
         >
           {{ ln.text }}
@@ -1129,7 +1129,6 @@
   // Get interface settings
   const {
     parseUciInfo,
-    engineLogLineLimit,
     showChineseNotation,
     showLuckIndex,
     showBookMoves,
@@ -2490,6 +2489,11 @@
         clearInterval(playInterval.value)
         playInterval.value = null
       }
+
+      if (engineLogScrollFrame !== null) {
+        cancelAnimationFrame(engineLogScrollFrame)
+        engineLogScrollFrame = null
+      }
     })
   })
 
@@ -2594,18 +2598,24 @@
     { deep: true }
   )
 
-  // Watch current engine output for scrolling
-  watch(
-    currentEngineOutput,
-    () => {
-      nextTick(() => {
-        if (engineLogElement.value) {
-          engineLogElement.value.scrollTop = engineLogElement.value.scrollHeight
-        }
-      })
-    },
-    { deep: true }
-  )
+  let engineLogScrollFrame: number | null = null
+
+  // Avoid forcing a layout and scroll for every engine update. If the user has
+  // scrolled up to inspect history, preserve that position instead.
+  watch(currentEngineOutput, () => {
+    const log = engineLogElement.value
+    if (!log || engineLogScrollFrame !== null) return
+
+    const isAtBottom = log.scrollHeight - log.scrollTop - log.clientHeight <= 24
+    if (!isAtBottom) return
+
+    engineLogScrollFrame = requestAnimationFrame(() => {
+      if (engineLogElement.value) {
+        engineLogElement.value.scrollTop = engineLogElement.value.scrollHeight
+      }
+      engineLogScrollFrame = null
+    })
+  })
 
   // Watch ponder availability and stop ponder if not available
   watch(isPonderAvailable, available => {
@@ -2620,25 +2630,6 @@
       }
     }
   })
-
-  // Watch engine output and clear log when it reaches the limit
-  watch(
-    currentEngineOutput,
-    newOutput => {
-      if (newOutput.length > engineLogLineLimit.value) {
-        console.log(
-          `[DEBUG] ENGINE_LOG_LIMIT: Clearing log at ${newOutput.length} lines (limit: ${engineLogLineLimit.value})`
-        )
-        // Clear the appropriate engine output array based on current mode
-        if (isMatchMode.value && jaiEngine?.engineOutput?.value) {
-          jaiEngine.engineOutput.value = []
-        } else {
-          engineOutput.value = []
-        }
-      }
-    },
-    { deep: true }
-  )
 
   const validationStatusKey = computed(() => {
     if (!validationStatus.value) return 'error'
