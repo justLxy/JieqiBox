@@ -22,6 +22,11 @@ export interface EngineLine {
   kind: 'sent' | 'recv'
 }
 
+export interface UciOptionChange {
+  name: string
+  value?: string | number | boolean
+}
+
 export function useUciEngine(generateFen: () => string, gameState: any) {
   const { t } = useI18n()
   const { useNewFenFormat, validationTimeout, engineLogLineLimit } =
@@ -31,6 +36,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
   const engineOutput = ref<EngineLine[]>([])
   const isEngineLoaded = ref(false)
   const isEngineLoading = ref(false) // Add a new state for engine loading
+  const isApplyingOptions = ref(false)
   const currentEngine = ref<ManagedEngine | null>(null) // Store the currently loaded engine object
   const uciOkReceived = ref(false) // For validation
   const bestMove = ref('')
@@ -49,6 +55,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
   // Cache of analysis lines for each PV
   const analysisLines: string[] = []
   const uciOptionsText = ref('') // cache UCI options raw text
+  const uciOptionLines = new Set<string>()
   const currentEnginePath = ref('') // current engine path
   const currentSearchMoves = ref<string[]>([]) // Current searchmoves restriction for variation analysis
   const analysisStartTime = ref<number | null>(null) // Track when analysis started
@@ -80,6 +87,12 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
   const OUTPUT_THROTTLE_DELAY = 50 // Process output every 50ms maximum
   const MATE_OUTPUT_THROTTLE_DELAY = 300 // Slower processing for mate situations
   let nextEngineOutputId = 0
+  let pendingOptionApplications = 0
+
+  // Tauri IPC and the WebSocket bridge are asynchronous. Preserve command
+  // ordering so position always precedes go, and expensive option changes are
+  // fully acknowledged before another search command is allowed through.
+  let engineCommandTail: Promise<void> = Promise.resolve()
 
   let unlisten: (() => void) | null = null
 
@@ -94,6 +107,17 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
 
     engineOutput.value =
       nextOutput.length > maxLines ? nextOutput.slice(-maxLines) : nextOutput
+  }
+
+  const enqueueEngineCommand = <T>(operation: () => Promise<T>): Promise<T> => {
+    const queued = engineCommandTail.then(operation, operation)
+    // Keep the queue usable after a transport error. The caller which issued
+    // the command still receives and logs the individual failure.
+    engineCommandTail = queued.then(
+      () => undefined,
+      () => undefined
+    )
+    return queued
   }
 
   /* ---------- Helper Functions ---------- */
@@ -339,12 +363,11 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
         analysisLines.length = 0
         isInfinitePondering.value = false // Reset infinite pondering flag when analysis completes
       }
-      if (ln === 'uciok' && !(window as any).__UCI_TERMINAL_ACTIVE__)
-        send('isready')
       if (ln === 'readyok') analysis.value = t('uci.engineReady')
 
       // record UCI options
-      if (ln.startsWith('option name ')) {
+      if (ln.startsWith('option name ') && !uciOptionLines.has(ln)) {
+        uciOptionLines.add(ln)
         uciOptionsText.value += ln + '\n'
       }
     })
@@ -387,8 +410,10 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
     isEngineLoading.value = true
     isEngineLoaded.value = false
     currentEngine.value = null
+    currentEnginePath.value = engine.path
     engineOutput.value = [] // Clear log
     uciOptionsText.value = '' // Clear UCI options text to prevent duplication
+    uciOptionLines.clear()
 
     // Start playing loading sound in loop
     console.log('[ENGINE_LOAD] Starting engine load, calling playSoundLoop...')
@@ -428,7 +453,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
       )
 
       // Send 'uci' to start validation
-      send('uci')
+      await send('uci')
 
       // Wait for validation to complete or time out
       await validationWaiter.promise
@@ -451,29 +476,26 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
       const configManager = useConfigManager()
       await configManager.saveLastSelectedEngineId(engine.id)
 
-      // Automatically apply saved configuration after engine loads
-      setTimeout(async () => {
-        await applySavedSettings()
+      // Apply saved settings and wait for the engine to acknowledge them
+      // before allowing the UI to start a new search.
+      await applySavedSettings()
 
-        // Send ucinewgame after engine is loaded and configured
-        // This ensures the engine starts with a clean state
-        try {
-          console.log(
-            '[DEBUG] ENGINE_LOAD: Sending ucinewgame after engine initialization'
-          )
-          await sendUciNewGame()
-          console.log('[DEBUG] ENGINE_LOAD: ucinewgame completed successfully')
-        } catch (error) {
-          console.error(
-            '[DEBUG] ENGINE_LOAD: Failed to send ucinewgame:',
-            error
-          )
-          // Don't fail engine loading if ucinewgame fails
-        }
+      // Send ucinewgame after engine is configured so it begins from a clean
+      // state. Some third-party engines do not implement readyok reliably, so
+      // a timeout here is logged but does not make an otherwise valid engine
+      // unavailable.
+      try {
+        console.log(
+          '[DEBUG] ENGINE_LOAD: Sending ucinewgame after engine initialization'
+        )
+        await sendUciNewGame()
+        console.log('[DEBUG] ENGINE_LOAD: ucinewgame completed successfully')
+      } catch (error) {
+        console.error('[DEBUG] ENGINE_LOAD: Failed to send ucinewgame:', error)
+      }
 
-        // Mark engine as loaded after all initialization is complete
-        isEngineLoaded.value = true
-      }, 100)
+      // Mark the engine as loaded after all initialization is complete.
+      isEngineLoaded.value = true
     } catch (e: any) {
       validationWaiter?.cancel()
       // Stop loading sound on error
@@ -540,8 +562,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
   }
 
   /* ---------- Basic Send ---------- */
-  const send = (cmd: string) => {
-    // No longer check isEngineLoaded, as we need to send 'uci' before it's true
+  const recordOutgoingCommand = (cmd: string) => {
     appendEngineOutput([{ text: cmd, kind: 'sent' }])
 
     // Clear analysis lines when MultiPV setting changes to prevent stale data
@@ -553,10 +574,99 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
         `[DEBUG] UCI_OPTION_CHANGE: Cleared analysis lines for MultiPV change`
       )
     }
+  }
 
-    sendToEngine(cmd).catch(e => {
+  const send = (cmd: string): Promise<void> => {
+    // No longer check isEngineLoaded, as we need to send 'uci' before it's true
+    recordOutgoingCommand(cmd)
+
+    return enqueueEngineCommand(() => sendToEngine(cmd)).catch(e => {
       // Don't alert here, it can be noisy during initial load failure
       console.warn('Failed to send to engine:', e)
+    })
+  }
+
+  const sendCommandsAndWaitForReady = async (
+    commands: string[],
+    timeoutMs: number,
+    timeoutMessage: string
+  ): Promise<void> => {
+    commands.forEach(recordOutgoingCommand)
+    recordOutgoingCommand('isready')
+
+    // Register the response waiter in the same serialized operation before
+    // writing isready. No later position/go command can overtake it.
+    await enqueueEngineCommand(async () => {
+      const readyWaiter = await armEngineLineWaiter(
+        line => line === 'readyok',
+        timeoutMs,
+        timeoutMessage
+      )
+
+      try {
+        for (const command of commands) {
+          await sendToEngine(command)
+        }
+        await sendToEngine('isready')
+        await readyWaiter.promise
+      } finally {
+        readyWaiter.cancel()
+      }
+    })
+  }
+
+  const applyUciOptions = async (changes: UciOptionChange[]): Promise<void> => {
+    if (!currentEngine.value || changes.length === 0) return
+    if (isThinking.value || isPondering.value) {
+      throw new Error('Stop the current search before changing UCI options.')
+    }
+
+    const commands = changes.map(change =>
+      change.value === undefined
+        ? `setoption name ${change.name}`
+        : `setoption name ${change.name} value ${change.value}`
+    )
+
+    pendingOptionApplications += 1
+    isApplyingOptions.value = true
+    try {
+      await sendCommandsAndWaitForReady(
+        commands,
+        30000,
+        'Applying UCI options timed out: No readyok received within 30 seconds'
+      )
+    } finally {
+      pendingOptionApplications -= 1
+      isApplyingOptions.value = pendingOptionApplications > 0
+    }
+  }
+
+  const requestUciOptions = async (): Promise<string> => {
+    if (!currentEngine.value) return ''
+
+    recordOutgoingCommand('uci')
+    return enqueueEngineCommand(async () => {
+      const optionLines: string[] = []
+      const unlistenOptions = await onEngineOutput(payload => {
+        for (const line of payload.split(/\r\n|\n|\r/)) {
+          const trimmed = line.trim()
+          if (trimmed.startsWith('option name ')) optionLines.push(trimmed)
+        }
+      })
+      const uciWaiter = await armEngineLineWaiter(
+        line => line === 'uciok',
+        validationTimeout.value,
+        `UCI option request timed out: No 'uciok' received within ${validationTimeout.value}ms.`
+      )
+
+      try {
+        await sendToEngine('uci')
+        await uciWaiter.promise
+        return optionLines.join('\n')
+      } finally {
+        uciWaiter.cancel()
+        unlistenOptions()
+      }
     })
   }
 
@@ -569,21 +679,11 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
 
     console.log('[DEBUG] UCI_NEWGAME: Sending ucinewgame command')
 
-    const readyWaiter = await armEngineLineWaiter(
-      line => line === 'readyok',
+    await sendCommandsAndWaitForReady(
+      ['ucinewgame'],
       5000,
       'ucinewgame timeout: No readyok received within 5 seconds'
     )
-
-    // Send ucinewgame command
-    send('ucinewgame')
-
-    // According to UCI protocol, we should send isready after ucinewgame
-    // to wait for the engine to complete internal reset
-    console.log('[DEBUG] UCI_NEWGAME: Sending isready after ucinewgame')
-    send('isready')
-
-    await readyWaiter.promise
     console.log('[DEBUG] UCI_NEWGAME: Received readyok, new game initialized')
   }
 
@@ -597,7 +697,8 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
     baseFen: string | null = null,
     searchmoves: string[] = []
   ) => {
-    if (!isEngineLoaded.value || isThinking.value) return
+    if (!isEngineLoaded.value || isThinking.value || isApplyingOptions.value)
+      return
 
     isThinking.value = true
     isStopping.value = false // Reset stopping flag on new analysis
@@ -845,7 +946,8 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
     settings: any = {}
   ) => {
     isInfinitePondering.value = false // Reset infinite pondering flag when starting ponder
-    if (!isEngineLoaded.value || isPondering.value) return
+    if (!isEngineLoaded.value || isPondering.value || isApplyingOptions.value)
+      return
 
     // Convert FEN to the correct format for engine communication
     const fenForEngine = gameState.generateFenForEngine
@@ -1096,18 +1198,13 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
         currentEngine.value.id
       )
 
-      if (Object.keys(savedUciOptions).length === 0) return
+      const changes = Object.entries(savedUciOptions).map(([name, value]) => ({
+        // Special handling for button type: sentinel '__button__' means execute button.
+        name,
+        value: value === '__button__' ? undefined : value,
+      }))
 
-      Object.entries(savedUciOptions).forEach(([name, value]) => {
-        // Special handling for button type: sentinel '__button__' means execute button
-        if (value === '__button__') {
-          const command = `setoption name ${name}`
-          send(command)
-          return
-        }
-        const command = `setoption name ${name} value ${value}`
-        send(command)
-      })
+      await applyUciOptions(changes)
     } catch (error) {
       console.error('Failed to apply saved settings:', error)
     }
@@ -1177,6 +1274,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
     engineOutput,
     isEngineLoaded,
     isEngineLoading,
+    isApplyingOptions,
     bestMove,
     analysis,
     isThinking,
@@ -1191,6 +1289,8 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
     startAnalysis,
     stopAnalysis,
     uciOptionsText,
+    applyUciOptions,
+    requestUciOptions,
     send,
     sendUciNewGame,
     currentEnginePath,

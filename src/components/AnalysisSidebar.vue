@@ -10,6 +10,7 @@
         :label="$t('analysis.selectEngine')"
         density="compact"
         hide-details
+        :disabled="!isMatchMode && isApplyingOptions"
         class="engine-select"
         variant="outlined"
       ></v-select>
@@ -21,7 +22,8 @@
         :disabled="
           (isMatchMode ? jaiEngine?.isEngineLoading?.value : isEngineLoading) ||
           !selectedEngineId ||
-          (isMatchMode ? jaiEngine?.isEngineLoaded?.value : isEngineLoaded)
+          (isMatchMode ? jaiEngine?.isEngineLoaded?.value : isEngineLoaded) ||
+          (!isMatchMode && isApplyingOptions)
         "
         :color="
           (isMatchMode ? jaiEngine?.isEngineLoaded?.value : isEngineLoaded)
@@ -37,7 +39,8 @@
       <v-btn
         @click="handleUnloadEngine"
         :disabled="
-          !(isMatchMode ? jaiEngine?.isEngineLoaded?.value : isEngineLoaded)
+          !(isMatchMode ? jaiEngine?.isEngineLoaded?.value : isEngineLoaded) ||
+          (!isMatchMode && isApplyingOptions)
         "
         color="error"
         size="x-small"
@@ -48,6 +51,7 @@
       </v-btn>
       <v-btn
         @click="showEngineManager = true"
+        :disabled="!isMatchMode && isApplyingOptions"
         color="blue-grey"
         size="x-small"
         class="action-btn"
@@ -61,7 +65,7 @@
     <div v-if="!isMatchMode && !isHumanVsAiMode" class="button-group">
       <v-btn
         @click="handleAnalysisButtonClick"
-        :disabled="!isEngineLoaded"
+        :disabled="!isEngineLoaded || isApplyingOptions"
         :color="isThinking || isPondering ? 'warning' : 'primary'"
         variant="flat"
         class="grouped-btn"
@@ -1170,6 +1174,7 @@
     engineOutput,
     isEngineLoaded,
     isEngineLoading,
+    isApplyingOptions,
     analysis,
     bestMove,
     isThinking,
@@ -1882,6 +1887,7 @@
 
   // Function to load the selected engine from the manager
   const loadSelectedEngine = () => {
+    if (!isMatchMode.value && isApplyingOptions.value) return
     if (!selectedEngineId.value) {
       alert(t('analysis.selectEngine'))
       return
@@ -1946,6 +1952,7 @@
 
   // Function to unload the current engine
   const handleUnloadEngine = async () => {
+    if (!isMatchMode.value && isApplyingOptions.value) return
     if (isMatchMode.value) {
       // In match mode, check JAI engine state
       if (!jaiEngine?.isEngineLoaded?.value) {

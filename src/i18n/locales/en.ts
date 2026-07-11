@@ -64,6 +64,11 @@ export default {
     confirmClearSettings:
       'Are you sure you want to clear all UCI option configurations for the current engine? This action cannot be undone.',
     settingsCleared: 'UCI option configurations cleared',
+    loadFailed:
+      'Failed to load engine options. Make sure the engine is still running.',
+    applyFailed: 'Failed to apply engine options. The settings were not saved.',
+    engineBusy:
+      'The engine is searching. Stop analysis before changing options.',
     // Friendly option names (falls back to the raw engine key when absent)
     optionNames: {
       'Debug Log File': 'Debug log file',
@@ -84,7 +89,7 @@ export default {
         'The debug file that records communication between the engine and the GUI.',
       Threads:
         'Number of threads used for engine search. It is recommended to set this to the number of available system threads minus one or two.',
-      Hash: "Engine's hash table size (in MB). It is recommended to set this value to the total available memory minus 1 to 2 GiB.",
+      Hash: "Engine's hash table size (in MB). Larger is not always faster; 512 MB to 4 GiB is usually enough for normal analysis. Leave ample memory for the OS and UI, or memory latency, bandwidth contention, and swapping can reduce search speed.",
       'Clear Hash': 'Clears the hash table.',
       MultiPV:
         'Multi-Principal Variation. Allows the engine to show multiple recommended moves. It is recommended to set this to 1. If set higher, the quality of the best move may decrease because resources will be allocated to evaluating alternative lines.',

@@ -36,6 +36,8 @@
           <v-btn
             color="primary"
             @click="refreshOptions"
+            :loading="isLoading"
+            :disabled="areOptionsLocked"
             size="large"
             class="action-btn"
           >
@@ -74,6 +76,7 @@
                     v-model.number="option.currentValue"
                     :min="option.min"
                     :max="option.max"
+                    :disabled="areOptionsLocked"
                     type="number"
                     variant="outlined"
                     density="compact"
@@ -102,6 +105,7 @@
                   </div>
                   <v-switch
                     v-model="option.currentValue as boolean"
+                    :disabled="areOptionsLocked"
                     color="primary"
                     class="option-switch flex-grow-0"
                     hide-details
@@ -130,6 +134,7 @@
                 <v-select
                   v-model="option.currentValue as string"
                   :items="option.vars"
+                  :disabled="areOptionsLocked"
                   variant="outlined"
                   density="compact"
                   hide-details
@@ -155,6 +160,7 @@
                 </div>
                 <v-text-field
                   v-model="option.currentValue as string"
+                  :disabled="areOptionsLocked"
                   variant="outlined"
                   density="compact"
                   hide-details
@@ -183,6 +189,8 @@
                     color="primary"
                     variant="outlined"
                     class="execute-btn"
+                    :loading="isApplyingOptions"
+                    :disabled="areOptionsLocked"
                     @click="executeButtonOption(option.name)"
                   >
                     {{ $t('uciOptions.execute') }}
@@ -212,6 +220,7 @@
             <v-btn
               color="grey"
               @click="resetToDefaults"
+              :disabled="areOptionsLocked"
               size="small"
               class="action-btn"
             >
@@ -220,6 +229,8 @@
             <v-btn
               color="primary"
               @click="refreshOptions"
+              :loading="isLoading"
+              :disabled="areOptionsLocked"
               size="small"
               class="action-btn"
             >
@@ -228,6 +239,7 @@
             <v-btn
               color="grey"
               @click="clearSettings"
+              :disabled="areOptionsLocked"
               size="small"
               class="action-btn"
             >
@@ -237,6 +249,8 @@
           <v-btn
             color="grey"
             @click="closeDialog"
+            :loading="isApplyingOptions"
+            :disabled="isBusy"
             size="small"
             class="close-action-btn"
           >
@@ -265,6 +279,8 @@
     vars?: string[]
   }
 
+  type UciOptionValue = string | number | boolean
+
   // Component properties definition
   interface Props {
     modelValue: boolean
@@ -283,8 +299,13 @@
   // Inject engine state
   const { t } = useI18n()
   const engineState = inject('engine-state') as any
-  const { isEngineLoaded, engineOutput, uciOptionsText, currentEnginePath } =
-    engineState
+  const {
+    isEngineLoaded,
+    uciOptionsText,
+    isApplyingOptions,
+    isThinking,
+    isPondering,
+  } = engineState
 
   // Configuration manager
   const configManager = useConfigManager()
@@ -292,8 +313,11 @@
   // Reactive data
   const isLoading = ref(false)
   const uciOptions = ref<UciOption[]>([])
-  const isWaitingForOptions = ref(false)
   const originalOptions = ref<Record<string, string | number | boolean>>({})
+  const isBusy = computed(() => isLoading.value || isApplyingOptions.value)
+  const areOptionsLocked = computed(
+    () => isBusy.value || isThinking.value || isPondering.value
+  )
 
   // Detect if the device is mobile
   const isMobile = computed(() => {
@@ -313,21 +337,9 @@
     return props.engineId
   })
 
-  // Send UCI command to the engine
-  const sendUciCommand = (command: string) => {
-    if (!isEngineLoaded.value) {
-      return
-    }
-
-    // Directly call the engine's send method
-    if (engineState.send) {
-      engineState.send(command)
-    }
-  }
-
   // Function to parse UCI options text
   const parseUciOptions = (uciText: string): UciOption[] => {
-    const options: UciOption[] = []
+    const options = new Map<string, UciOption>()
     const lines = uciText.split('\n')
 
     lines.forEach(line => {
@@ -335,12 +347,12 @@
       if (trimmedLine.startsWith('option name ')) {
         const option = parseUciOptionLine(trimmedLine)
         if (option) {
-          options.push(option)
+          options.set(option.name, option)
         }
       }
     })
 
-    return options
+    return [...options.values()]
   }
 
   // Function to parse a single UCI option line
@@ -365,9 +377,9 @@
     // Parse specific parameters based on type
     switch (type) {
       case 'spin':
-        const defaultSpinMatch = line.match(/default (\d+)/)
-        const minMatch = line.match(/min (\d+)/)
-        const maxMatch = line.match(/max (\d+)/)
+        const defaultSpinMatch = line.match(/default (-?\d+)/)
+        const minMatch = line.match(/min (-?\d+)/)
+        const maxMatch = line.match(/max (-?\d+)/)
 
         option.defaultValue = defaultSpinMatch
           ? parseInt(defaultSpinMatch[1])
@@ -384,7 +396,7 @@
         break
 
       case 'combo':
-        const defaultComboMatch = line.match(/default (\w+)/)
+        const defaultComboMatch = line.match(/default (.+?)(?=\s+var\s|$)/)
         const varsMatch = line.match(/var (.+)/)
 
         option.defaultValue = defaultComboMatch ? defaultComboMatch[1] : ''
@@ -392,7 +404,7 @@
         break
 
       case 'string':
-        const defaultStringMatch = line.match(/default (.+?)(?:\s|$)/)
+        const defaultStringMatch = line.match(/default\s*(.*)$/)
         option.defaultValue = defaultStringMatch ? defaultStringMatch[1] : ''
         break
 
@@ -407,172 +419,214 @@
     return option
   }
 
-  // Load saved option values from config file
-  const loadSavedOptions = () => {
+  // Saved values describe the engine's active configuration after startup.
+  // They are applied by useUciEngine during loading, so opening this dialog
+  // must only reflect them and never replay large options such as Hash.
+  const loadSavedOptionValues = () => {
     const savedOptions = configManager.getUciOptions(enginePathHash.value)
 
-    // Apply the saved values to the current options
     uciOptions.value.forEach(option => {
       if (savedOptions[option.name] !== undefined) {
-        option.currentValue = savedOptions[option.name]
-        // Immediately send the set command to the engine
-        sendOptionToEngine(option.name, option.currentValue)
+        option.currentValue = normalizeOptionValue(
+          option,
+          savedOptions[option.name]
+        )
       }
     })
   }
 
-  // Save option values to config file
-  const saveOptionsToStorage = async () => {
-    const optionsToSave: Record<string, string | number | boolean> = {}
+  const normalizeOptionValue = (
+    option: UciOption,
+    value: unknown
+  ): UciOptionValue => {
+    switch (option.type) {
+      case 'spin': {
+        const numericValue = Number(value)
+        return Number.isFinite(numericValue)
+          ? numericValue
+          : (option.defaultValue as number)
+      }
+      case 'check':
+        return value === true || String(value).trim().toLowerCase() === 'true'
+      case 'combo':
+      case 'string':
+        return String(value)
+      case 'button':
+        return ''
+    }
+  }
 
+  const areOptionValuesEqual = (
+    option: UciOption,
+    left: unknown,
+    right: unknown
+  ) =>
+    normalizeOptionValue(option, left) === normalizeOptionValue(option, right)
+
+  const captureOriginalOptions = () => {
+    originalOptions.value = {}
     uciOptions.value.forEach(option => {
       if (option.type !== 'button') {
+        originalOptions.value[option.name] = option.currentValue
+      }
+    })
+  }
+
+  // Persist only overrides. Saving all engine defaults causes every option to
+  // be replayed during the next startup, including expensive Hash allocation.
+  const saveOptionsToStorage = async () => {
+    const savedOptions = configManager.getUciOptions(enginePathHash.value)
+    const optionsByName = new Map(
+      uciOptions.value.map(option => [option.name, option])
+    )
+    const optionsToSave = Object.fromEntries(
+      Object.entries(savedOptions).filter(([name]) => {
+        const option = optionsByName.get(name)
+        return !option || option.type === 'button'
+      })
+    ) as Record<string, UciOptionValue>
+
+    uciOptions.value.forEach(option => {
+      if (
+        option.type !== 'button' &&
+        !areOptionValuesEqual(option, option.currentValue, option.defaultValue)
+      ) {
         optionsToSave[option.name] = option.currentValue
       }
     })
 
+    const savedKeys = Object.keys(savedOptions)
+    const nextKeys = Object.keys(optionsToSave)
+    const isUnchanged =
+      savedKeys.length === nextKeys.length &&
+      nextKeys.every(key => {
+        const option = uciOptions.value.find(item => item.name === key)
+        return option
+          ? areOptionValuesEqual(option, savedOptions[key], optionsToSave[key])
+          : savedOptions[key] === optionsToSave[key]
+      })
+
+    if (isUnchanged) return
     await configManager.updateUciOptions(enginePathHash.value, optionsToSave)
   }
 
-  // Send option set command to the engine
-  const sendOptionToEngine = (
-    name: string,
-    value: string | number | boolean
+  const applyOptionChanges = async (
+    changes: Array<{
+      name: string
+      value?: string | number | boolean
+    }>
   ) => {
-    const command = `setoption name ${name} value ${value}`
-    sendUciCommand(command)
+    if (changes.length === 0) return
+    await engineState.applyUciOptions(changes)
   }
 
   // Function to update an option's value
-  const updateOption = (name: string, value: string | number | boolean) => {
+  const updateOption = (name: string, value: UciOptionValue) => {
     const option = uciOptions.value.find(opt => opt.name === name)
     if (option) {
-      option.currentValue = value
+      option.currentValue = normalizeOptionValue(option, value)
     }
   }
 
   // Function to execute a button-type option
-  const executeButtonOption = (name: string) => {
-    const command = `setoption name ${name}`
-    sendUciCommand(command)
+  const executeButtonOption = async (name: string) => {
+    if (areOptionsLocked.value) return
+
+    try {
+      await applyOptionChanges([{ name }])
+    } catch (error) {
+      console.error('Failed to execute UCI option:', error)
+      alert(t('uciOptions.applyFailed'))
+    }
   }
 
   // Function to reset to default values
   const resetToDefaults = async () => {
-    uciOptions.value.forEach(option => {
-      option.currentValue = option.defaultValue
-      // Send reset command to the engine
-      if (option.type !== 'button') {
-        sendOptionToEngine(option.name, option.defaultValue)
-      }
-    })
+    if (areOptionsLocked.value) return
 
-    // Clear config storage
-    await configManager.clearUciOptions(enginePathHash.value)
+    const changes = uciOptions.value
+      .filter(option => option.type !== 'button')
+      .map(option => ({ name: option.name, value: option.defaultValue }))
+
+    try {
+      await applyOptionChanges(changes)
+      uciOptions.value.forEach(option => {
+        if (option.type !== 'button') option.currentValue = option.defaultValue
+      })
+      await configManager.clearUciOptions(enginePathHash.value)
+      captureOriginalOptions()
+    } catch (error) {
+      console.error('Failed to reset UCI options:', error)
+      alert(t('uciOptions.applyFailed'))
+    }
   }
 
   // Function to refresh UCI options
-  const refreshOptions = () => {
+  const refreshOptions = async () => {
     if (!isEngineLoaded.value) {
       alert(t('uciOptions.noEngineLoaded'))
       return
     }
+    if (areOptionsLocked.value) return
 
     isLoading.value = true
 
-    // If options are not in cache, actively request them
-    if (!uciOptionsText.value || uciOptionsText.value.trim() === '') {
-      sendUciCommand('uci')
-    }
-
-    // Parse cached options
-    setTimeout(() => {
-      isLoading.value = false
-      const options = parseUciOptions(uciOptionsText.value)
+    try {
+      const optionText = uciOptionsText.value.trim()
+        ? uciOptionsText.value
+        : await engineState.requestUciOptions()
+      const options = parseUciOptions(optionText)
       uciOptions.value = options
-      loadSavedOptions()
-
-      // Store original values after loading
-      originalOptions.value = {}
-      uciOptions.value.forEach(option => {
-        if (option.type !== 'button') {
-          originalOptions.value[option.name] = option.currentValue
-        }
-      })
-    }, 100)
+      loadSavedOptionValues()
+      captureOriginalOptions()
+    } catch (error) {
+      console.error('Failed to load UCI options:', error)
+      alert(t('uciOptions.loadFailed'))
+    } finally {
+      isLoading.value = false
+    }
   }
 
   // Function to close the dialog
   const closeDialog = async () => {
+    if (isBusy.value) return
+
     try {
-      // Identify modified options and send `setoption` command
-      for (const option of uciOptions.value) {
-        if (
-          option.type !== 'button' &&
-          originalOptions.value[option.name] !== option.currentValue
-        ) {
-          sendOptionToEngine(option.name, option.currentValue)
-        }
+      const changes = uciOptions.value
+        .filter(
+          option =>
+            option.type !== 'button' &&
+            !areOptionValuesEqual(
+              option,
+              originalOptions.value[option.name],
+              option.currentValue
+            )
+        )
+        .map(option => ({ name: option.name, value: option.currentValue }))
+
+      if (changes.length > 0 && (isThinking.value || isPondering.value)) {
+        alert(t('uciOptions.engineBusy'))
+        return
       }
 
-      // Save all current option values to config. This is an async operation that might fail.
+      await applyOptionChanges(changes)
+
+      // Always normalize legacy configurations which may have persisted every
+      // default option, while avoiding a write when the effective overrides
+      // are already unchanged.
       await saveOptionsToStorage()
-    } catch (error) {
-      // If saving fails, log the error for debugging purposes.
-      // This prevents an unhandled promise rejection from stopping execution.
-      console.error('Failed to save UCI options on close:', error)
-    } finally {
-      // CRUCIAL: Ensure the dialog is always closed, regardless of whether the save operation succeeded or failed.
-      // This makes the close button robust and reliable for the user.
+      captureOriginalOptions()
       isVisible.value = false
+    } catch (error) {
+      console.error('Failed to save UCI options on close:', error)
+      alert(t('uciOptions.applyFailed'))
     }
   }
-
-  // Watch engine output to get UCI options
-  const parseEngineOutput = () => {
-    if (!isWaitingForOptions.value) return
-
-    // Collect all engine output
-    const allOutput = (engineOutput.value as { kind: string; text: string }[])
-      .filter(line => line.kind === 'recv')
-      .map(line => line.text)
-      .join('\n')
-
-    // Check if 'uciok' is received (indicates options sending is complete)
-    if (allOutput.includes('uciok')) {
-      isWaitingForOptions.value = false
-      isLoading.value = false
-
-      // Parse options
-      const options = parseUciOptions(allOutput)
-      uciOptions.value = options
-
-      // Load saved option values
-      loadSavedOptions()
-    }
-  }
-
-  // Watch for changes in engine output
-  watch(() => engineOutput.value, parseEngineOutput, { deep: true })
-
-  // Watch for changes in engine load status
-  watch(
-    () => isEngineLoaded.value,
-    newVal => {
-      if (newVal && currentEnginePath.value) {
-        // After the engine is loaded, refresh options with a delay to ensure the engine is ready
-        setTimeout(() => {
-          refreshOptions()
-        }, 500)
-      }
-    }
-  )
 
   // Watch the dialog's open state
   watch(isVisible, newVal => {
     if (newVal && isEngineLoaded.value) {
-      // Automatically refresh options when the dialog opens
-      refreshOptions()
+      void refreshOptions()
     }
   })
 
@@ -582,11 +636,7 @@
     await configManager.loadConfig()
 
     // If the engine is already loaded, get options immediately
-    if (isEngineLoaded.value) {
-      setTimeout(() => {
-        refreshOptions()
-      }, 500)
-    }
+    if (isVisible.value && isEngineLoaded.value) void refreshOptions()
   })
 
   // Resolve a friendly, localized display name for a known engine option. Falls
@@ -615,20 +665,11 @@
 
   // Function to clear settings
   const clearSettings = async () => {
-    if (confirm(t('uciOptions.confirmClearSettings'))) {
-      // Clear config storage
-      await configManager.clearUciOptions(enginePathHash.value)
-
-      // Reset all options to their default values
-      uciOptions.value.forEach(option => {
-        option.currentValue = option.defaultValue
-        // Send reset command to the engine
-        if (option.type !== 'button') {
-          sendOptionToEngine(option.name, option.defaultValue)
-        }
-      })
-
-      // console.log(t('uciOptions.settingsCleared'));
+    if (
+      !areOptionsLocked.value &&
+      confirm(t('uciOptions.confirmClearSettings'))
+    ) {
+      await resetToDefaults()
     }
   }
 
