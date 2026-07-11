@@ -19,6 +19,17 @@ import type {
 } from '@/types/openingBook'
 import { useInterfaceSettings } from './useInterfaceSettings'
 
+export interface OpeningBookEntryInput {
+  fen: string
+  uciMove: string
+  priority?: number
+  wins?: number
+  draws?: number
+  losses?: number
+  allowed?: boolean
+  comment?: string
+}
+
 // Lazy Tauri invoke so the web bundle never loads the native core.
 const tauriInvoke = async <T>(
   cmd: string,
@@ -127,6 +138,52 @@ export function useOpeningBook() {
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to add entry'
       console.error('Opening book add entry error:', err)
+      return false
+    }
+  }
+
+  // Add several entries with one native transaction and one statistics refresh.
+  const addEntries = async (
+    entries: OpeningBookEntryInput[]
+  ): Promise<boolean> => {
+    if (entries.length === 0) return true
+
+    try {
+      const success = isTauri()
+        ? await tauriInvoke<boolean>('opening_book_add_entries', {
+            requests: entries.map(entry => ({
+              fen: entry.fen,
+              uci_move: entry.uciMove,
+              priority: entry.priority ?? 100,
+              wins: entry.wins ?? 0,
+              draws: entry.draws ?? 0,
+              losses: entry.losses ?? 0,
+              allowed: entry.allowed ?? true,
+              comment: entry.comment ?? '',
+            })),
+          })
+        : entries.every(entry =>
+            webAddEntry(
+              entry.fen,
+              entry.uciMove,
+              entry.priority ?? 100,
+              entry.wins ?? 0,
+              entry.draws ?? 0,
+              entry.losses ?? 0,
+              entry.allowed ?? true,
+              entry.comment ?? ''
+            )
+          )
+      if (success) {
+        await updateStats()
+      }
+      return success
+    } catch (err) {
+      error.value =
+        err instanceof Error
+          ? err.message
+          : 'Failed to add opening book entries'
+      console.error('Opening book add entries error:', err)
       return false
     }
   }
@@ -302,6 +359,7 @@ export function useOpeningBook() {
     // Actions
     initialize,
     addEntry,
+    addEntries,
     deleteEntry,
     queryMoves,
     getBestMove,

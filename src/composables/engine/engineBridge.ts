@@ -23,6 +23,11 @@ import type { WsEngineController } from './wsEngine'
 export type EngineOutputHandler = (line: string) => void
 export type Unlisten = () => void
 
+export interface EngineLineWaiter {
+  promise: Promise<void>
+  cancel: () => void
+}
+
 export interface SpawnOptions {
   /** Native: absolute path to the engine binary. Web: WASM engine identifier. */
   path: string
@@ -88,6 +93,76 @@ export const onEngineOutput = async (
   outputHandlers.add(handler)
   return () => {
     outputHandlers.delete(handler)
+  }
+}
+
+/**
+ * Register a one-shot protocol waiter before sending the command that produces
+ * the response. The listener and timeout are always released once settled.
+ */
+export const armEngineLineWaiter = async (
+  matches: (line: string) => boolean,
+  timeoutMs: number,
+  timeoutMessage: string
+): Promise<EngineLineWaiter> => {
+  let unlisten: Unlisten | null = null
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  let settled = false
+  let resolvePromise!: () => void
+  let rejectPromise!: (reason: Error) => void
+
+  const promise = new Promise<void>((resolve, reject) => {
+    resolvePromise = resolve
+    rejectPromise = reject
+  })
+
+  const cleanup = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+      timeoutId = null
+    }
+    unlisten?.()
+    unlisten = null
+  }
+
+  const resolve = () => {
+    if (settled) return
+    settled = true
+    cleanup()
+    resolvePromise()
+  }
+
+  const reject = (error: Error) => {
+    if (settled) return
+    settled = true
+    cleanup()
+    rejectPromise(error)
+  }
+
+  try {
+    unlisten = await onEngineOutput(payload => {
+      for (const line of payload.split(/\r\n|\n|\r/)) {
+        if (matches(line.trim())) {
+          resolve()
+          return
+        }
+      }
+    })
+  } catch (error) {
+    reject(error instanceof Error ? error : new Error(String(error)))
+  }
+
+  if (settled) {
+    unlisten?.()
+  } else {
+    timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs)
+  }
+
+  return {
+    promise,
+    // Cancellation is used during teardown. Resolve rather than reject so a
+    // failed spawn cannot leave an unobserved rejected promise behind.
+    cancel: resolve,
   }
 }
 

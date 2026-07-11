@@ -1509,14 +1509,22 @@
         : 'default'
     return resolvePieceImage(pieceName, style)
   }
+  const moveNumberByHistoryIndex = computed(() => {
+    const labels = Array<string>(history.value.length).fill('')
+    let moveCount = 0
+
+    history.value.forEach((entry: HistoryEntry, index: number) => {
+      if (entry.type !== 'move') return
+      moveCount += 1
+      const moveNumber = Math.floor((moveCount - 1) / 2) + 1
+      labels[index] = `${moveNumber}${moveCount % 2 === 0 ? '...' : '.'}`
+    })
+
+    return labels
+  })
+
   function getMoveNumber(historyIndex: number): string {
-    const moveCount = history.value
-      .slice(0, historyIndex + 1)
-      .filter((e: HistoryEntry) => e.type === 'move').length
-    if (moveCount === 0) return ''
-    const moveNumber = Math.floor((moveCount - 1) / 2) + 1
-    const isSecondMove = (moveCount - 1) % 2 === 1
-    return `${moveNumber}${isSecondMove ? '...' : '.'}`
+    return moveNumberByHistoryIndex.value[historyIndex] ?? ''
   }
 
   /* ---------- Core Logic ---------- */
@@ -2370,9 +2378,6 @@
       console.error('Failed to load match mode settings:', error)
     }
 
-    // Debug: Check history entries on mount
-    debugHistoryEntries()
-
     // Listen for force stop AI event. This is used to stop analysis in various scenarios.
     const handleForceStopAi = (event: CustomEvent) => {
       console.log(
@@ -2585,9 +2590,6 @@
           moveListElement.value.scrollTop = moveListElement.value.scrollHeight
         }
       })
-
-      // Debug: Check history entries when history changes
-      debugHistoryEntries()
     },
     { deep: true }
   )
@@ -3211,20 +3213,6 @@
   function formatTime(timeMs: number): string {
     if (timeMs < 1000) return `${timeMs}ms`
     return `${(timeMs / 1000).toFixed(1)}s`
-  }
-
-  // Debug function to check history entries
-  function debugHistoryEntries() {
-    console.log('[DEBUG] HISTORY_ENTRIES: Current history:', history.value)
-    history.value.forEach((entry: any, idx: number) => {
-      if (entry.type === 'move') {
-        console.log(`[DEBUG] HISTORY_ENTRY_${idx}:`, {
-          data: entry.data,
-          engineScore: entry.engineScore,
-          engineTime: entry.engineTime,
-        })
-      }
-    })
   }
 
   /* ---------- Luck Index ---------- */

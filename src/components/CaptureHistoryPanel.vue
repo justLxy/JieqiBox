@@ -84,39 +84,24 @@
 
     const extension = uciMove.slice(4) // Everything after position info
 
-    console.log(
-      `parseUciExtended: uciMove="${uciMove}", movingSide="${movingSide}"`
-    )
-    console.log(`Extension: "${extension}"`)
-
     if (extension.length === 1) {
       // 5 characters total: could be flip or capture
       const char = extension[0]
       const isUpperCase = char === char.toUpperCase()
       const charSide = isUpperCase ? 'red' : 'black'
 
-      console.log(
-        `Single char extension: char="${char}", isUpperCase=${isUpperCase}, charSide="${charSide}"`
-      )
-
       if (charSide === movingSide) {
         // Same side as mover: this is a flip (revealing own piece)
-        console.log(`Result: flip="${char}", capture=null`)
         return { flipChar: char, captureChar: null }
       } else {
         // Different side: this is a capture (eating opponent's piece)
-        console.log(`Result: flip=null, capture="${char}"`)
         return { flipChar: null, captureChar: char }
       }
     } else if (extension.length === 2) {
       // 6 characters total: first is flip, second is capture
-      console.log(
-        `Two char extension: flip="${extension[0]}", capture="${extension[1]}"`
-      )
       return { flipChar: extension[0], captureChar: extension[1] }
     }
 
-    console.log(`Result: flip=null, capture=null`)
     return { flipChar: null, captureChar: null }
   }
 
@@ -131,18 +116,10 @@
 
     const humanSide = aiSide.value === 'red' ? 'black' : 'red'
 
-    console.log('=== parseCaptures DEBUG ===')
-    console.log('Human side:', humanSide)
-    console.log('AI side:', aiSide.value)
-    console.log('Current move index:', currentMoveIndex.value)
-    console.log('History length:', history.value.length)
-
-    // Parse history up to current move
-    for (
-      let i = 0;
-      i <= currentMoveIndex.value && i < history.value.length;
-      i++
-    ) {
+    // currentMoveIndex is the number of applied history entries, so it is an
+    // exclusive bound. Including it leaks one future replay move into the UI.
+    const historyEnd = Math.min(currentMoveIndex.value, history.value.length)
+    for (let i = 0; i < historyEnd; i++) {
       const move = history.value[i]
       if (!move.data || move.type !== 'move') continue
 
@@ -174,50 +151,17 @@
         }
       }
 
-      // Determine whose move this is based on the FEN color field before this move
-      let isHumanMove: boolean
-      if (i === 0) {
-        // For the first move, check the initial FEN
-        const initialFenParts = gameState.initialFen.value.split(' ')
-        const colorField = initialFenParts[1] || 'w'
-        const firstMover = colorField === 'w' ? 'red' : 'black'
-        isHumanMove = firstMover === humanSide
-      } else {
-        // For subsequent moves, check the FEN before this move
-        const prevFen = gameState.history.value[i - 1].fen
-        const fenParts = prevFen.split(' ')
-        const colorField = fenParts[1] || 'w'
-        const mover = colorField === 'w' ? 'red' : 'black'
-        isHumanMove = mover === humanSide
-      }
-
-      // Determine moving side from the FEN color field before this move
-      let movingSide: 'red' | 'black'
-      if (i === 0) {
-        // For the first move, check the initial FEN
-        const initialFenParts = gameState.initialFen.value.split(' ')
-        const colorField = initialFenParts[1] || 'w'
-        movingSide = colorField === 'w' ? 'red' : 'black'
-      } else {
-        // For subsequent moves, check the FEN before this move
-        const prevFen = gameState.history.value[i - 1].fen
-        const fenParts = prevFen.split(' ')
-        const colorField = fenParts[1] || 'w'
-        movingSide = colorField === 'w' ? 'red' : 'black'
-      }
-
-      console.log(`\nMove ${i}: ${uciMove}`)
-      console.log(`Move number: ${moveNumber}`)
-      console.log(`Is human move: ${isHumanMove}`)
-      console.log(`Moving side: ${movingSide}`)
+      const fenBefore =
+        i === 0 ? gameState.initialFen.value : history.value[i - 1].fen
+      const movingSide: 'red' | 'black' =
+        (fenBefore.split(' ')[1] || 'w') === 'w' ? 'red' : 'black'
+      const isHumanMove = movingSide === humanSide
 
       // Check for captures from UCI extended format (dark pieces)
       const { captureChar } = parseUciExtended(uciMove, movingSide)
-      console.log(`UCI extended capture: ${captureChar || 'none'}`)
 
       // Check for captures from basic UCI (revealed pieces captured)
       const basicCapture = checkBasicCapture(uciMove, i)
-      console.log(`Basic capture: ${basicCapture || 'none'}`)
 
       // No need for special hidden capture detection since UCI format is now complete
 
@@ -232,24 +176,17 @@
           const pieceName = getPieceNameFromChar(captureChar)
           if (pieceName) {
             myCaptured.push({ name: pieceName, moveNumber })
-            console.log(`Added dark piece capture to myCaptured: ${pieceName}`)
             captureHandled = true
           }
         } else {
           // AI captured a dark piece - in human vs AI mode, don't reveal what was captured
           if (isHumanVsAiMode.value) {
             opponentCaptured.push({ name: 'unknown', moveNumber })
-            console.log(
-              `Added dark piece capture to opponentCaptured: unknown (hidden from human)`
-            )
           } else {
             // In normal mode, show what was captured
             const pieceName = getPieceNameFromChar(captureChar)
             if (pieceName) {
               opponentCaptured.push({ name: pieceName, moveNumber })
-              console.log(
-                `Added dark piece capture to opponentCaptured: ${pieceName}`
-              )
             }
           }
           captureHandled = true
@@ -264,13 +201,6 @@
           // Only add if we haven't already added a capture for this move
           if (!captureHandled) {
             myCaptured.push({ name: basicCapture, moveNumber })
-            console.log(
-              `Added revealed piece capture to myCaptured: ${basicCapture}`
-            )
-          } else {
-            console.log(
-              `Basic capture detected but already handled via UCI extension: ${basicCapture}`
-            )
           }
         } else {
           // AI captured a revealed piece - show what was captured (it was visible)
@@ -284,26 +214,13 @@
               lastEntry.moveNumber === moveNumber
             ) {
               lastEntry.name = basicCapture
-              console.log(
-                `Replaced unknown capture with revealed piece: ${basicCapture}`
-              )
             }
           } else {
             opponentCaptured.push({ name: basicCapture, moveNumber })
-            console.log(
-              `Added revealed piece capture to opponentCaptured: ${basicCapture}`
-            )
           }
         }
-      } else if (!captureHandled) {
-        console.log('No capture detected')
       }
     }
-
-    console.log('Final results:')
-    console.log('My captured:', myCaptured)
-    console.log('Opponent captured:', opponentCaptured)
-    console.log('=== END parseCaptures DEBUG ===\n')
 
     return { myCaptured, opponentCaptured }
   }
@@ -321,7 +238,7 @@
     let fenBefore: string
     if (moveIndex === 0) {
       fenBefore =
-        gameState.initialFen ||
+        gameState.initialFen.value ||
         'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1'
     } else {
       fenBefore = history.value[moveIndex - 1].fen
@@ -333,15 +250,6 @@
     const toCol = toFile.charCodeAt(0) - 'a'.charCodeAt(0)
     const toRow = 9 - parseInt(toRank) // Convert UCI rank to row index (rank 1 = row 8, rank 9 = row 0)
 
-    // DEBUG: Log input parameters
-    console.log('=== checkBasicCapture DEBUG ===')
-    console.log('Full UCI move:', uciMove)
-    console.log('Basic UCI (first 4 chars):', basicUci)
-    console.log('Move index:', moveIndex)
-    console.log('Target file:', toFile, 'rank:', toRank)
-    console.log('Calculated col:', toCol, 'row:', toRow, '(FIXED: 9 - rank)')
-    console.log('FEN before move:', fenBefore)
-
     // Check if there was a revealed piece at the target position
     try {
       // Parse FEN to get piece positions (simplified parsing for capture detection)
@@ -349,51 +257,32 @@
       const boardPart = fenParts[0]
       const rows = boardPart.split('/')
 
-      console.log('FEN parts:', fenParts)
-      console.log('Board part:', boardPart)
-      console.log('Rows:', rows)
-      console.log('Target row index:', toRow, 'Row exists:', !!rows[toRow])
-
       if (rows[toRow]) {
         const targetRow = rows[toRow]
-        console.log('Target row string:', targetRow)
 
         let col = 0
         for (let i = 0; i < targetRow.length; i++) {
           const char = targetRow[i]
-          console.log(
-            `Position ${i}: char='${char}', current col=${col}, target col=${toCol}`
-          )
 
           if (char >= '1' && char <= '9') {
-            const spaces = parseInt(char)
-            console.log(`Found number ${char}, adding ${spaces} spaces`)
+            const spaces = parseInt(char, 10)
             col += spaces
           } else if (char !== 'x' && char !== 'X') {
             // Found a revealed piece
-            console.log(`Found revealed piece '${char}' at col ${col}`)
             if (col === toCol) {
               const pieceName = getPieceNameFromChar(char)
-              console.log(`MATCH! Captured revealed piece: ${pieceName}`)
-              console.log('=== END DEBUG ===')
               return pieceName
             }
             col++
           } else {
-            console.log(`Found dark piece '${char}' at col ${col}`)
             col++
           }
         }
-        console.log(`No piece found at target position (col ${toCol})`)
-      } else {
-        console.log('Target row does not exist!')
       }
     } catch (error) {
       console.warn('Failed to parse FEN for capture detection:', error)
-      console.log('=== END DEBUG ===')
     }
 
-    console.log('=== END DEBUG ===')
     return null
   }
 
@@ -418,10 +307,11 @@
     return charMap[char] || null
   }
 
-  // Computed properties for captured pieces
-  const myCapturedPieces = computed(() => parseCaptures().myCaptured)
+  // Parse once per reactive update; both panels derive from the same snapshot.
+  const capturedPieces = computed(parseCaptures)
+  const myCapturedPieces = computed(() => capturedPieces.value.myCaptured)
   const opponentCapturedPieces = computed(
-    () => parseCaptures().opponentCaptured
+    () => capturedPieces.value.opponentCaptured
   )
 </script>
 

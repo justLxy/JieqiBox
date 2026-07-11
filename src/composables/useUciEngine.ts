@@ -4,6 +4,7 @@ import {
   sendToEngine,
   killEngine,
   onEngineOutput,
+  armEngineLineWaiter,
 } from './engine/engineBridge'
 import { useI18n } from 'vue-i18n'
 import { useConfigManager, type ManagedEngine } from './useConfigManager' // Import new types
@@ -388,32 +389,9 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
     // Prepare for validation
     uciOkReceived.value = false
 
-    // A promise that resolves when 'uciok' is received
-    const uciOkPromise = new Promise<void>((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(
-          new Error(
-            `Validation timeout: No 'uciok' received within ${validationTimeout.value}ms.`
-          )
-        )
-      }, validationTimeout.value)
-
-      // Listen specifically for the uciok signal
-      onEngineOutput(line => {
-        if (line.trim() === 'uciok') {
-          console.log(
-            `[DEBUG] Received uciok for ${engine.name}. Validation successful.`
-          )
-          uciOkReceived.value = true
-          clearTimeout(timeoutId)
-          resolve()
-        }
-      }).then(unsub => {
-        // When the promise resolves or rejects, we'll stop listening
-        const cleanup = () => unsub()
-        uciOkPromise.finally(cleanup)
-      })
-    })
+    let validationWaiter: Awaited<
+      ReturnType<typeof armEngineLineWaiter>
+    > | null = null
 
     try {
       // Spawn engine process
@@ -425,11 +403,23 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
         args: engine.args.split(' ').filter(Boolean),
       })
 
+      // Subscribe before writing `uci` so a fast engine cannot answer before
+      // the validation listener is active.
+      validationWaiter = await armEngineLineWaiter(
+        line => line === 'uciok',
+        validationTimeout.value,
+        `Validation timeout: No 'uciok' received within ${validationTimeout.value}ms.`
+      )
+
       // Send 'uci' to start validation
       send('uci')
 
       // Wait for validation to complete or time out
-      await uciOkPromise
+      await validationWaiter.promise
+      uciOkReceived.value = true
+      console.log(
+        `[DEBUG] Received uciok for ${engine.name}. Validation successful.`
+      )
 
       // Stop loading sound when engine is ready
       console.log(
@@ -469,6 +459,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
         isEngineLoaded.value = true
       }, 100)
     } catch (e: any) {
+      validationWaiter?.cancel()
       // Stop loading sound on error
       console.log('[ENGINE_LOAD] Engine load failed, stopping loading sound...')
       stopSoundLoop()
@@ -562,6 +553,12 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
 
     console.log('[DEBUG] UCI_NEWGAME: Sending ucinewgame command')
 
+    const readyWaiter = await armEngineLineWaiter(
+      line => line === 'readyok',
+      5000,
+      'ucinewgame timeout: No readyok received within 5 seconds'
+    )
+
     // Send ucinewgame command
     send('ucinewgame')
 
@@ -570,34 +567,8 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
     console.log('[DEBUG] UCI_NEWGAME: Sending isready after ucinewgame')
     send('isready')
 
-    // Wait for readyok response
-    return new Promise<void>((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(
-          new Error('ucinewgame timeout: No readyok received within 5 seconds')
-        )
-      }, 5000)
-
-      // Listen for readyok response
-      onEngineOutput(line => {
-        if (line.trim() === 'readyok') {
-          console.log(
-            '[DEBUG] UCI_NEWGAME: Received readyok, new game initialized'
-          )
-          clearTimeout(timeoutId)
-          resolve()
-        }
-      })
-        .then(unlisten => {
-          // Store the unlisten function to clean up if needed
-          timeoutId && clearTimeout(timeoutId)
-          return unlisten
-        })
-        .catch(e => {
-          clearTimeout(timeoutId)
-          reject(e)
-        })
-    })
+    await readyWaiter.promise
+    console.log('[DEBUG] UCI_NEWGAME: Received readyok, new game initialized')
   }
 
   /* ---------- Start Analysis ---------- */

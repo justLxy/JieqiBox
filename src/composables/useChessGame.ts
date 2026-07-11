@@ -3191,7 +3191,9 @@ export function useChessGame() {
   }
 
   // Opening book functions
+  let openingBookQueryVersion = 0
   const queryOpeningBookMoves = async (): Promise<void> => {
+    const requestVersion = ++openingBookQueryVersion
     if (!openingBook.isInitialized.value) {
       currentBookMoves.value = []
       return
@@ -3200,8 +3202,10 @@ export function useChessGame() {
     try {
       const currentFen = generateFen()
       const bookMoves = await openingBook.queryMoves(currentFen)
+      if (requestVersion !== openingBookQueryVersion) return
       currentBookMoves.value = showBookMoves.value ? bookMoves : []
     } catch (error) {
+      if (requestVersion !== openingBookQueryVersion) return
       console.error('Error querying opening book:', error)
       currentBookMoves.value = []
     }
@@ -3258,6 +3262,39 @@ export function useChessGame() {
       )
     } catch (error) {
       console.error('Error adding position to opening book:', error)
+      return false
+    }
+  }
+
+  const addPositionsToOpeningBook = async (
+    uciMoves: string[],
+    priority: number = 100,
+    wins: number = 0,
+    draws: number = 0,
+    losses: number = 0,
+    allowed: boolean = true,
+    comment: string = ''
+  ): Promise<boolean> => {
+    if (!openingBook.isInitialized.value || uciMoves.length === 0) {
+      return false
+    }
+
+    try {
+      const currentFen = generateFen()
+      return await openingBook.addEntries(
+        uciMoves.map(uciMove => ({
+          fen: currentFen,
+          uciMove,
+          priority,
+          wins,
+          draws,
+          losses,
+          allowed,
+          comment,
+        }))
+      )
+    } catch (error) {
+      console.error('Error adding positions to opening book:', error)
       return false
     }
   }
@@ -3471,6 +3508,7 @@ export function useChessGame() {
     queryOpeningBookMoves,
     getOpeningBookMove,
     addPositionToOpeningBook,
+    addPositionsToOpeningBook,
     deletePositionFromOpeningBook,
     calculateMovePositions,
   }

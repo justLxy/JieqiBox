@@ -376,17 +376,17 @@
 
       const { priority, allowed, comment } = batchFormState.value
 
-      // Add each marked move to the opening book
-      for (const uciMove of markedMoves.value) {
-        await gameState.addPositionToOpeningBook(
-          uciMove,
-          priority,
-          0, // wins
-          0, // draws
-          0, // losses
-          allowed,
-          comment
-        )
+      const success = await gameState.addPositionsToOpeningBook(
+        markedMoves.value,
+        priority,
+        0, // wins
+        0, // draws
+        0, // losses
+        allowed,
+        comment
+      )
+      if (!success) {
+        throw new Error('Failed to add marked moves to opening book')
       }
 
       // Refresh the opening book moves

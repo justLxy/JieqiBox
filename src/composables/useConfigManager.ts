@@ -153,8 +153,33 @@ const defaultConfig: ConfigData = {
   locale: 'zh_cn',
 }
 
-// Current configuration data
-const configData = ref<ConfigData>({ ...defaultConfig })
+const createDefaultConfig = (): ConfigData => ({
+  ...defaultConfig,
+  interfaceSettings: { ...defaultConfig.interfaceSettings },
+  windowSettings: { ...defaultConfig.windowSettings },
+  evaluationChartSettings: { ...defaultConfig.evaluationChartSettings },
+  analysisSettings: { ...defaultConfig.analysisSettings },
+  gameSettings: { ...defaultConfig.gameSettings },
+  matchSettings: { ...defaultConfig.matchSettings },
+  humanVsAiSettings: { ...defaultConfig.humanVsAiSettings },
+  uciOptions: {},
+  jaiOptions: {},
+})
+
+// The configuration is process-wide. Coalescing initial reads and serializing
+// writes prevents dozens of dialogs/composables from racing on the same INI.
+const configData = ref<ConfigData>(createDefaultConfig())
+let hasLoadedConfig = false
+let configLoadPromise: Promise<void> | null = null
+let configSavePromise: Promise<void> | null = null
+let configSaveRequested = false
+let configPersistenceTail: Promise<void> = Promise.resolve()
+
+const enqueueConfigPersistence = (operation: () => Promise<void>) => {
+  const next = configPersistenceTail.then(operation, operation)
+  configPersistenceTail = next.catch(() => undefined)
+  return next
+}
 
 // Platform detection utility
 const isAndroidPlatform = computed(() => checkAndroidPlatform())
@@ -162,10 +187,24 @@ const isAndroidPlatform = computed(() => checkAndroidPlatform())
 // Configuration file manager composable
 export function useConfigManager() {
   // Load configuration from file
-  const loadConfig = async (): Promise<void> => {
-    try {
-      const loadedConfig = await loadConfigString()
-      if (loadedConfig) {
+  const loadConfig = async (force = false): Promise<void> => {
+    if (configLoadPromise) return configLoadPromise
+    if (hasLoadedConfig && !force) return
+
+    configLoadPromise = (async () => {
+      try {
+        // A forced reload must not observe the file halfway through a queued
+        // in-process write.
+        if (force) {
+          await configPersistenceTail
+        }
+
+        const loadedConfig = await loadConfigString()
+        if (!loadedConfig) {
+          configData.value = createDefaultConfig()
+          return
+        }
+
         const parsedConfig = Ini.parse(loadedConfig)
 
         // Validate window settings to detect abnormal values
@@ -208,7 +247,7 @@ export function useConfigManager() {
 
         // Merge with default config to ensure all properties exist
         configData.value = {
-          ...defaultConfig,
+          ...createDefaultConfig(),
           ...parsedConfig,
           interfaceSettings: {
             ...defaultConfig.interfaceSettings,
@@ -232,25 +271,54 @@ export function useConfigManager() {
             ...defaultConfig.gameSettings,
             ...parsedConfig.gameSettings,
           },
+          matchSettings: {
+            ...defaultConfig.matchSettings,
+            ...parsedConfig.matchSettings,
+          },
+          humanVsAiSettings: {
+            ...defaultConfig.humanVsAiSettings,
+            ...parsedConfig.humanVsAiSettings,
+          },
           uciOptions: parsedConfig.uciOptions || {},
           jaiOptions: parsedConfig.jaiOptions || {},
         }
+      } catch (error) {
+        console.error('Failed to load configuration:', error)
+        // Use default configuration if loading fails
+        configData.value = createDefaultConfig()
+      } finally {
+        hasLoadedConfig = true
+        configLoadPromise = null
       }
-    } catch (error) {
-      console.error('Failed to load configuration:', error)
-      // Use default configuration if loading fails
-      configData.value = { ...defaultConfig }
-    }
+    })()
+
+    return configLoadPromise
   }
 
-  // Save configuration to file
+  // Save configuration through one single-flight loop. Changes arriving while
+  // I/O is in progress are persisted as one final, latest-state write.
   const saveConfig = async (): Promise<void> => {
-    try {
-      const configIni = Ini.stringify(configData.value)
-      await saveConfigString(configIni)
-    } catch (error) {
-      console.error('Failed to save configuration:', error)
+    configSaveRequested = true
+
+    if (!configSavePromise) {
+      configSavePromise = enqueueConfigPersistence(async () => {
+        // Batch synchronous updates from one UI event before serializing.
+        await Promise.resolve()
+
+        while (configSaveRequested) {
+          configSaveRequested = false
+          try {
+            await saveConfigString(Ini.stringify(configData.value))
+          } catch (error) {
+            console.error('Failed to save configuration:', error)
+          }
+        }
+      }).finally(() => {
+        configSavePromise = null
+      })
     }
+
+    await configSavePromise
   }
 
   // Get interface settings
@@ -345,7 +413,6 @@ export function useConfigManager() {
       configData.value.Engines = {}
     }
     configData.value.Engines.list = JSON.stringify(engines)
-    await saveConfig()
     // Clear last selected engine ID if the list is empty
     if (engines.length === 0) {
       console.log(
@@ -353,9 +420,9 @@ export function useConfigManager() {
       )
       if (configData.value.Settings) {
         delete configData.value.Settings.lastSelectedEngineId
-        await saveConfig()
       }
     }
+    await saveConfig()
   }
 
   const getLastSelectedEngineId = (): string | null => {
@@ -375,8 +442,7 @@ export function useConfigManager() {
     if (configData.value.Settings) {
       console.log(`[DEBUG] ConfigManager: Clearing last selected engine ID`)
       delete configData.value.Settings.lastSelectedEngineId
-      // Don't call saveConfig here to avoid infinite recursion
-      // The caller should call saveConfig if needed
+      await saveConfig()
     }
   }
 
@@ -477,15 +543,20 @@ export function useConfigManager() {
 
   // Reset all configuration to defaults
   const resetToDefaults = async (): Promise<void> => {
-    configData.value = { ...defaultConfig }
+    configData.value = createDefaultConfig()
     await saveConfig()
   }
 
   // Clear all configuration
   const clearAllConfig = async (): Promise<void> => {
+    configData.value = createDefaultConfig()
+    hasLoadedConfig = true
+    configSaveRequested = false
+
     try {
-      await clearConfigString()
-      configData.value = { ...defaultConfig }
+      await enqueueConfigPersistence(async () => {
+        await clearConfigString()
+      })
     } catch (error) {
       console.error('Failed to clear configuration:', error)
     }

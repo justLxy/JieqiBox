@@ -4,6 +4,7 @@ import {
   sendToEngine,
   killEngine,
   onEngineOutput,
+  armEngineLineWaiter,
 } from './engine/engineBridge'
 import { useI18n } from 'vue-i18n'
 import { useConfigManager, type ManagedEngine } from './useConfigManager'
@@ -380,32 +381,9 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
     // Prepare for validation
     jaiOkReceived.value = false
 
-    // A promise that resolves when 'jaiok' is received
-    const jaiOkPromise = new Promise<void>((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(
-          new Error(
-            `Validation timeout: No 'jaiok' received within ${validationTimeout.value}ms.`
-          )
-        )
-      }, validationTimeout.value)
-
-      // Listen specifically for the jaiok signal
-      onEngineOutput(line => {
-        if (line.trim() === 'jaiok') {
-          console.log(
-            `[DEBUG] Received jaiok for ${engine.name}. Validation successful.`
-          )
-          jaiOkReceived.value = true
-          clearTimeout(timeoutId)
-          resolve()
-        }
-      }).then(unsub => {
-        // When the promise resolves or rejects, we'll stop listening
-        const cleanup = () => unsub()
-        jaiOkPromise.finally(cleanup)
-      })
-    })
+    let validationWaiter: Awaited<
+      ReturnType<typeof armEngineLineWaiter>
+    > | null = null
 
     try {
       // Spawn engine process
@@ -417,11 +395,23 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
         args: engine.args.split(' ').filter(Boolean),
       })
 
+      // Subscribe before writing `jai` so a fast engine cannot answer before
+      // the validation listener is active.
+      validationWaiter = await armEngineLineWaiter(
+        line => line === 'jaiok',
+        validationTimeout.value,
+        `Validation timeout: No 'jaiok' received within ${validationTimeout.value}ms.`
+      )
+
       // Send 'jai' to start validation
       send('jai')
 
       // Wait for validation to complete or time out
-      await jaiOkPromise
+      await validationWaiter.promise
+      jaiOkReceived.value = true
+      console.log(
+        `[DEBUG] Received jaiok for ${engine.name}. Validation successful.`
+      )
 
       // Stop loading sound when engine is ready
       console.log(
@@ -444,6 +434,7 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
         isEngineLoaded.value = true
       }, 100)
     } catch (e: any) {
+      validationWaiter?.cancel()
       // Stop loading sound on error
       console.log(
         '[JAI_ENGINE_LOAD] Engine load failed, stopping loading sound...'
