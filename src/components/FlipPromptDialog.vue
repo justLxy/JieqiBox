@@ -16,7 +16,11 @@
         @mousedown="startDrag"
         @touchstart="startDrag"
       >
-        <span class="text-h5">{{ $t('flipPrompt.title') }}</span>
+        <span class="text-h5">{{
+          gameState.pendingFlip.value?.kind === 'capture'
+            ? $t('flipPrompt.captureTitle')
+            : $t('flipPrompt.title')
+        }}</span>
         <div class="drag-handle">⋮⋮</div>
       </div>
       <div class="dialog-content">

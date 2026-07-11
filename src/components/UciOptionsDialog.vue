@@ -5,13 +5,12 @@
     persistent
   >
     <v-card class="uci-options-card">
-      <v-card-title class="dialog-title">
-        <span class="title-text">{{ $t('uciOptions.title') }}</span>
-        <v-spacer></v-spacer>
-        <v-btn icon @click="closeDialog" class="close-btn">
-          <v-icon :color="isDark ? 'white' : 'black'">mdi-close</v-icon>
-        </v-btn>
-      </v-card-title>
+      <DialogHeader
+        :title="$t('uciOptions.title')"
+        :subtitle="$t('uciOptions.subtitle')"
+        icon="mdi-cog"
+        @close="closeDialog"
+      />
 
       <v-card-text class="options-container">
         <div v-if="isLoading" class="loading-section">
@@ -55,7 +54,16 @@
               <!-- 数值类型选项 (spin) -->
               <div v-if="option.type === 'spin'" class="option-row spin-option">
                 <div class="option-header">
-                  <label class="option-label">{{ option.name }}</label>
+                  <div class="option-label-group">
+                    <label class="option-label">{{
+                      getOptionLabel(option.name)
+                    }}</label>
+                    <span
+                      v-if="getOptionLabel(option.name) !== option.name"
+                      class="option-key"
+                      >{{ option.name }}</span
+                    >
+                  </div>
                   <span class="option-range"
                     >{{ $t('uciOptions.range') }}: {{ option.min }} -
                     {{ option.max }}</span
@@ -82,7 +90,16 @@
                 class="option-row check-option"
               >
                 <div class="d-flex justify-space-between align-center">
-                  <label class="option-label">{{ option.name }}</label>
+                  <div class="option-label-group">
+                    <label class="option-label">{{
+                      getOptionLabel(option.name)
+                    }}</label>
+                    <span
+                      v-if="getOptionLabel(option.name) !== option.name"
+                      class="option-key"
+                      >{{ option.name }}</span
+                    >
+                  </div>
                   <v-switch
                     v-model="option.currentValue as boolean"
                     color="primary"
@@ -100,7 +117,16 @@
                 v-else-if="option.type === 'combo'"
                 class="option-row combo-option"
               >
-                <label class="option-label">{{ option.name }}</label>
+                <div class="option-label-group">
+                  <label class="option-label">{{
+                    getOptionLabel(option.name)
+                  }}</label>
+                  <span
+                    v-if="getOptionLabel(option.name) !== option.name"
+                    class="option-key"
+                    >{{ option.name }}</span
+                  >
+                </div>
                 <v-select
                   v-model="option.currentValue as string"
                   :items="option.vars"
@@ -117,7 +143,16 @@
                 v-else-if="option.type === 'string'"
                 class="option-row string-option"
               >
-                <label class="option-label">{{ option.name }}</label>
+                <div class="option-label-group">
+                  <label class="option-label">{{
+                    getOptionLabel(option.name)
+                  }}</label>
+                  <span
+                    v-if="getOptionLabel(option.name) !== option.name"
+                    class="option-key"
+                    >{{ option.name }}</span
+                  >
+                </div>
                 <v-text-field
                   v-model="option.currentValue as string"
                   variant="outlined"
@@ -134,7 +169,16 @@
                 class="option-row button-option"
               >
                 <div class="d-flex justify-space-between align-center">
-                  <label class="option-label">{{ option.name }}</label>
+                  <div class="option-label-group">
+                    <label class="option-label">{{
+                      getOptionLabel(option.name)
+                    }}</label>
+                    <span
+                      v-if="getOptionLabel(option.name) !== option.name"
+                      class="option-key"
+                      >{{ option.name }}</span
+                    >
+                  </div>
                   <v-btn
                     color="primary"
                     variant="outlined"
@@ -208,7 +252,7 @@
   import { ref, computed, onMounted, watch, inject } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { useConfigManager } from '../composables/useConfigManager'
-  import { useTheme } from 'vuetify'
+  import DialogHeader from './DialogHeader.vue'
 
   // UCI option interface definition
   interface UciOption {
@@ -241,10 +285,6 @@
   const engineState = inject('engine-state') as any
   const { isEngineLoaded, engineOutput, uciOptionsText, currentEnginePath } =
     engineState
-
-  // Theme detection
-  const theme = useTheme()
-  const isDark = computed(() => theme.global.current.value.dark)
 
   // Configuration manager
   const configManager = useConfigManager()
@@ -549,6 +589,15 @@
     }
   })
 
+  // Resolve a friendly, localized display name for a known engine option. Falls
+  // back to the raw engine key (e.g. "MultiPV") when no translation exists, so
+  // custom/unknown options still show something meaningful.
+  const getOptionLabel = (optionName: string): string => {
+    const fullKey = `uciOptions.optionNames.${optionName}`
+    const label = t(fullKey)
+    return label !== fullKey ? label : optionName
+  }
+
   // Function to get option description from i18n
   const getOptionDescription = (optionName: string): string => {
     // Construct the full key path to the specific translation.
@@ -593,25 +642,8 @@
 
 <style lang="scss" scoped>
   .uci-options-card {
-    border-radius: 12px;
+    border-radius: var(--jb-radius);
     overflow: hidden;
-  }
-
-  .dialog-title {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 16px 20px;
-    position: relative;
-
-    .title-text {
-      font-size: 18px;
-      font-weight: 600;
-    }
-
-    .close-btn {
-      color: white;
-      margin-right: -8px;
-    }
   }
 
   .options-container {
@@ -671,32 +703,22 @@
   }
 
   .option-item {
-    border: 1px solid rgb(var(--v-border-color));
-    border-radius: 12px;
+    border: 1px solid var(--jb-line, rgba(var(--v-border-color), 0.16));
+    border-radius: var(--jb-radius);
     padding: 16px;
     background: rgb(var(--v-theme-surface));
-    transition: all 0.2s ease;
+    transition:
+      border-color 0.2s ease,
+      background 0.2s ease;
 
     &:hover {
-      background: rgb(var(--v-theme-surface-variant));
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      border-color: rgba(var(--v-theme-accent), 0.5);
     }
   }
 
-  .v-theme--dark .option-item:hover {
-    background: rgb(30, 30, 30) !important;
-  }
-
-  .v-theme--light .option-item:hover {
-    background: rgb(245, 245, 245) !important;
-  }
-
-  .v-theme--dark .dialog-actions {
-    background: rgb(30, 30, 30) !important;
-  }
-
-  .v-theme--light .dialog-actions {
-    background: rgb(245, 245, 245) !important;
+  .dialog-actions {
+    background: rgb(var(--v-theme-surface));
+    border-top: 1px solid var(--jb-line, rgba(var(--v-border-color), 0.16));
   }
 
   .option-row {
@@ -712,6 +734,13 @@
     gap: 4px;
   }
 
+  .option-label-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
   .option-label {
     font-weight: 600;
     color: rgb(var(--v-theme-on-surface));
@@ -719,7 +748,18 @@
     line-height: 1.4;
   }
 
+  // The raw engine key, shown small and mono under the friendly name so power
+  // users can still map it to the UCI protocol.
+  .option-key {
+    font-family: var(--jb-mono, monospace);
+    font-size: 11px;
+    line-height: 1.2;
+    color: rgba(var(--v-theme-on-surface), 0.45);
+  }
+
   .option-range {
+    font-family: var(--jb-mono, monospace);
+    font-variant-numeric: tabular-nums;
     font-size: 12px;
     color: rgb(var(--v-theme-on-surface));
     font-weight: 400;
@@ -736,6 +776,11 @@
   .number-input {
     max-width: 120px;
     align-self: flex-start;
+
+    :deep(input) {
+      font-family: var(--jb-mono, monospace);
+      font-variant-numeric: tabular-nums;
+    }
   }
 
   .option-switch {
@@ -754,6 +799,9 @@
     min-width: 100px;
   }
 
+  // A quiet neutral note, marked with an accent rule on the left — reads as
+  // "help text", not an error box (the old primary tint is cinnabar in light
+  // mode and looked like a warning).
   .option-description {
     display: flex;
     align-items: flex-start;
@@ -762,23 +810,19 @@
     line-height: 1.5;
     margin-top: 12px;
     padding: 10px 12px;
-    background-color: rgba(var(--v-theme-primary), 0.08);
-    border-radius: 8px;
-    color: rgb(var(--v-theme-on-surface));
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+    border-left: 3px solid rgba(var(--v-theme-accent), 0.5);
+    border-radius: var(--jb-radius-sm);
+    color: rgba(var(--v-theme-on-surface), 0.75);
 
     .description-icon {
-      color: inherit;
+      color: rgba(var(--v-theme-on-surface), 0.5);
       margin-top: 2px;
     }
 
     .description-text {
       flex: 1;
     }
-  }
-
-  // Tweak for dark mode
-  .v-theme--dark .option-description {
-    background-color: rgba(var(--v-theme-primary), 0.15);
   }
 
   .dialog-actions {

@@ -1,14 +1,11 @@
 <template>
   <v-dialog v-model="visible" max-width="900px" scrollable>
     <v-card>
-      <v-card-title class="d-flex align-center">
-        <v-icon class="mr-2">mdi-book-open-variant</v-icon>
-        {{ $t('openingBook.title') }}
-        <v-spacer />
-        <v-btn icon @click="closeDialog">
-          <v-icon>mdi-close</v-icon>
-        </v-btn>
-      </v-card-title>
+      <DialogHeader
+        :title="$t('openingBook.title')"
+        icon="mdi-book-open-variant"
+        @close="closeDialog"
+      />
 
       <v-card-text>
         <v-tabs v-model="activeTab" align-tabs="center">
@@ -155,25 +152,45 @@
 
             <!-- Settings Tab -->
             <v-window-item value="settings">
-              <v-card>
+              <v-card variant="flat" class="settings-tab">
                 <v-card-text>
-                  <v-switch
-                    v-model="openingBookEnableInGame"
+                  <SettingRow
                     :label="$t('openingBook.enableInGame')"
-                    color="primary"
-                  />
+                    :description="$t('openingBook.descriptions.enableInGame')"
+                  >
+                    <v-switch
+                      v-model="openingBookEnableInGame"
+                      color="primary"
+                      hide-details
+                      density="compact"
+                    />
+                  </SettingRow>
 
-                  <v-switch
-                    v-model="showBookMoves"
+                  <SettingRow
                     :label="$t('openingBook.showMoves')"
-                    color="primary"
-                  />
+                    :description="$t('openingBook.descriptions.showMoves')"
+                  >
+                    <v-switch
+                      v-model="showBookMoves"
+                      color="primary"
+                      hide-details
+                      density="compact"
+                    />
+                  </SettingRow>
 
-                  <v-switch
-                    v-model="openingBookPreferHighPriority"
+                  <SettingRow
                     :label="$t('openingBook.preferHighPriority')"
-                    color="primary"
-                  />
+                    :description="
+                      $t('openingBook.descriptions.preferHighPriority')
+                    "
+                  >
+                    <v-switch
+                      v-model="openingBookPreferHighPriority"
+                      color="primary"
+                      hide-details
+                      density="compact"
+                    />
+                  </SettingRow>
                 </v-card-text>
               </v-card>
             </v-window-item>
@@ -397,11 +414,19 @@
 <script setup lang="ts">
   import { ref, inject, computed, watch } from 'vue'
   import { useI18n } from 'vue-i18n'
-  import { save, open } from '@tauri-apps/plugin-dialog'
-  import { invoke } from '@tauri-apps/api/core'
-  import type { MoveData } from '@/types/openingBook'
+  import DialogHeader from './DialogHeader.vue'
+  import SettingRow from './SettingRow.vue'
+  import type { MoveData, OpeningBookEntry } from '@/types/openingBook'
   import { uciToChineseMoves } from '@/utils/chineseNotation'
   import { useInterfaceSettings } from '@/composables/useInterfaceSettings'
+  import { isTauri } from '@/utils/runtime'
+  import { downloadTextFile, pickTextFile } from '@/utils/platformIo'
+
+  // Lazy Tauri accessors so the web bundle never imports native-only modules.
+  const tauriInvoke = async (cmd: string, args?: Record<string, unknown>) => {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return invoke(cmd, args)
+  }
 
   const { t } = useI18n()
   const {
@@ -715,27 +740,37 @@
     try {
       importing.value = true
 
-      // Only use system open dialog to get a real filesystem path
+      // Web build: import a JSON export via the browser file picker. The native
+      // `.jb` SQLite format is only handled by the Tauri backend.
+      if (!isTauri()) {
+        const text = await pickTextFile('.json,application/json')
+        if (!text) return
+        const entries = JSON.parse(text) as OpeningBookEntry[]
+        await gameState.openingBook.importData(entries)
+        await refreshStats()
+        await gameState.queryOpeningBookMoves()
+        return
+      }
+
+      // Native: use the system open dialog to get a real filesystem path.
       let filePath: string | null = null
+      const { open } = await import('@tauri-apps/plugin-dialog')
 
-      // Fall back to Tauri's open dialog to obtain a real filesystem path
-      if (!filePath) {
-        const selectedUnknown = (await open({
-          multiple: false,
-          filters: [
-            {
-              name: 'JieqiBox Opening Book',
-              extensions: ['jb'],
-            },
-          ],
-        })) as unknown
+      const selectedUnknown = (await open({
+        multiple: false,
+        filters: [
+          {
+            name: 'JieqiBox Opening Book',
+            extensions: ['jb'],
+          },
+        ],
+      })) as unknown
 
-        if (typeof selectedUnknown === 'string') {
-          filePath = selectedUnknown
-        } else if (Array.isArray(selectedUnknown)) {
-          const arr = selectedUnknown as string[]
-          if (arr.length > 0) filePath = arr[0]
-        }
+      if (typeof selectedUnknown === 'string') {
+        filePath = selectedUnknown
+      } else if (Array.isArray(selectedUnknown)) {
+        const arr = selectedUnknown as string[]
+        if (arr.length > 0) filePath = arr[0]
       }
 
       if (!filePath) {
@@ -743,7 +778,7 @@
         return
       }
 
-      await invoke('opening_book_import_db', {
+      await tauriInvoke('opening_book_import_db', {
         sourcePath: filePath,
       })
       await refreshStats()
@@ -759,6 +794,17 @@
     try {
       exporting.value = true
 
+      // Web build: export the book as a JSON download.
+      if (!isTauri()) {
+        const entries = await gameState.openingBook.exportData()
+        downloadTextFile(
+          JSON.stringify(entries, null, 2),
+          'jieqi_openings.json'
+        )
+        return
+      }
+
+      const { save } = await import('@tauri-apps/plugin-dialog')
       const filePath = await save({
         filters: [
           {
@@ -770,7 +816,7 @@
       })
 
       if (filePath) {
-        const success = await invoke('opening_book_export_db', {
+        const success = await tauriInvoke('opening_book_export_db', {
           destinationPath: filePath,
         })
         console.log('Export result:', success)

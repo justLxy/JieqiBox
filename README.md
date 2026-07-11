@@ -89,6 +89,46 @@ Artifacts are written to `src-tauri/target/release/bundle/`.
 
 ---
 
+## Web version (browser) with local engine bridge
+
+JieqiBox also runs as a plain web page in the browser. Since a browser sandbox
+cannot launch a local engine process, the web build talks to a small **local
+bridge server** that runs on your own machine, launches the engine binary, and
+relays the UCI/JAI protocol over WebSocket. Config, autosave, and the opening
+book are stored in the browser's `localStorage` instead of files.
+
+### Running it
+
+```bash
+npm install
+
+# Terminal 1 — start the local engine bridge (listens on ws://127.0.0.1:8181)
+npm run bridge
+
+# Terminal 2 — serve the web app
+npm run dev        # development, or: npm run build && npm run preview
+```
+
+Open the printed URL in your browser. In **Engine Manager → Add Engine**, enter
+the **absolute path** of the engine binary on your machine (the same engine you
+would compile from the Pikafish jieqi branch). The bridge launches it and
+analysis works exactly like the desktop app.
+
+### Notes
+
+- The bridge binds to `127.0.0.1` only, so it is reachable solely from your
+  machine. It launches whatever executable path the browser sends — keep the
+  port local and do not expose it to your network. To restrict launchable
+  binaries to one folder, run it as
+  `ENGINES_DIR=/path/to/engines npm run bridge`.
+- Change the bridge port with `PORT=9000 npm run bridge`, and point the app at
+  it by setting `localStorage['jieqibox.bridgeUrl'] = 'ws://127.0.0.1:9000'` in
+  the browser console.
+- Both xiangqi (Pikafish) and jieqi (Pikafish jieqi branch) engines work — the
+  bridge just runs the native binary, so there is nothing to compile to WASM.
+
+---
+
 ## Contributing
 
 Bug reports, feature ideas and pull requests are welcome.

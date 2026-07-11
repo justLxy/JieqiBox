@@ -1,15 +1,22 @@
 <template>
   <div class="language-selector">
     <v-menu>
-      <template v-slot:activator="{ props }">
-        <v-btn
-          v-bind="props"
-          icon="mdi-translate"
-          size="small"
-          color="primary"
-          variant="text"
-          :title="$t('languages.current')"
-        />
+      <template v-slot:activator="{ props: menuProps }">
+        <v-tooltip
+          :text="`${$t('languages.current')}: ${availableLanguages[currentLanguage as keyof typeof availableLanguages] ?? ''}`"
+          location="bottom"
+          open-delay="200"
+        >
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="{ ...menuProps, ...tooltipProps }"
+              icon="mdi-translate"
+              size="small"
+              variant="text"
+              class="tool-icon"
+            />
+          </template>
+        </v-tooltip>
       </template>
       <v-list>
         <v-list-item
@@ -70,6 +77,17 @@
   .language-selector {
     display: flex;
     align-items: center;
+  }
+
+  // Match the quiet neutral-ink / cinnabar-hover treatment of the other
+  // toolbar icons instead of the old always-on primary color.
+  .tool-icon {
+    color: rgba(var(--v-theme-on-surface), 0.62);
+    transition: color 0.15s ease;
+
+    &:hover {
+      color: rgb(var(--v-theme-accent));
+    }
   }
 
   // Language-specific font styles for each option

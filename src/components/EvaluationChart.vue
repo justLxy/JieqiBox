@@ -319,9 +319,11 @@
       // Get canvas data as base64 PNG
       const imageData = saveCanvas.toDataURL('image/png')
 
-      // Check platform
+      // Check platform. The native Android command is only available under
+      // Tauri; a mobile browser must use the normal download path.
       const { isAndroidPlatform } = await import('@/utils/platform')
-      const isAndroid = isAndroidPlatform()
+      const { isTauri } = await import('@/utils/runtime')
+      const isAndroid = isTauri() && isAndroidPlatform()
 
       if (isAndroid) {
         // Use Tauri command to save to Android internal storage

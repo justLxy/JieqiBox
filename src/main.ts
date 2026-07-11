@@ -7,6 +7,7 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import '@mdi/font/css/materialdesignicons.css' // Import MDI icon styles
+import './styles/theme.scss' // Global theme refinements (Graphite & Cinnabar)
 
 // Import i18n
 import i18n from './i18n'
@@ -18,42 +19,47 @@ const vuetify = createVuetify({
   icons: {
     defaultSet: 'mdi', // Set default icon set to mdi
   },
-  // Add theme configuration for dark mode support
+  // Theme: "Graphite & Cinnabar" — a professional analysis-workbench palette.
+  // The single accent is cinnabar red (朱砂), the traditional ink of the red 帥,
+  // culturally true to Jieqi. Everything else is disciplined neutral graphite so
+  // the board and the capture pool read as the focus.
   theme: {
     defaultTheme: 'light',
     themes: {
       light: {
         dark: false,
         colors: {
-          primary: '#1976D2',
-          secondary: '#424242',
-          accent: '#82B1FF',
-          error: '#FF5252',
-          info: '#2196F3',
-          success: '#4CAF50',
-          warning: '#FF9800',
-          background: '#F5F5F5',
+          primary: '#C0362C', // cinnabar
+          secondary: '#6B6862', // soft ink
+          accent: '#C0362C',
+          error: '#B3261E',
+          info: '#3C6E9C',
+          success: '#3F9B5B',
+          warning: '#C98A2B',
+          background: '#F1F0EC', // warm paper-gray
           surface: '#FFFFFF',
           button: '#FFFFFF',
-          'on-background': '#000000',
-          'on-surface': '#000000',
+          'on-background': '#1C1B19',
+          'on-surface': '#1C1B19',
+          'on-primary': '#FFFFFF',
         },
       },
       dark: {
         dark: true,
         colors: {
-          primary: '#2196F3',
-          secondary: '#424242',
-          accent: '#FF4081',
-          error: '#FF5252',
-          info: '#2196F3',
-          success: '#4CAF50',
-          warning: '#FF9800',
-          background: '#202020',
-          surface: '#121212',
-          button: '#1A1A1A',
-          'on-background': '#FFFFFF',
-          'on-surface': '#FFFFFF',
+          primary: '#E4483B', // cinnabar, brighter for dark
+          secondary: '#8B9099',
+          accent: '#E4483B',
+          error: '#E4483B',
+          info: '#5C9BD1',
+          success: '#4CAF6E',
+          warning: '#D9A441',
+          background: '#16181D', // graphite
+          surface: '#1E2127',
+          button: '#262A31',
+          'on-background': '#E8E6E1',
+          'on-surface': '#E8E6E1',
+          'on-primary': '#FFFFFF',
         },
       },
     },

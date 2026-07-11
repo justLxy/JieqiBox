@@ -1,17 +1,32 @@
 <template>
-  <v-dialog v-model="isVisible" :max-width="dialogMaxWidth" persistent>
+  <v-dialog v-model="isVisible" :max-width="dialogMaxWidth" persistent scrollable>
     <v-card>
-      <v-card-title class="dialog-title">
-        <span>{{ $t('timeDialog.title') }}</span>
-        <v-spacer></v-spacer>
-        <v-btn icon @click="closeDialog">
-          <v-icon :color="isDark ? 'white' : 'black'">mdi-close</v-icon>
-        </v-btn>
-      </v-card-title>
+      <DialogHeader
+        :title="$t('timeDialog.title')"
+        :subtitle="$t('timeDialog.subtitle')"
+        icon="mdi-timer-outline"
+        @close="closeDialog"
+      />
 
       <v-card-text class="settings-container">
-        <div class="setting-item" v-if="analysisMode === 'advanced'">
-          <label class="setting-label">{{ $t('timeDialog.advanced') }}</label>
+        <!-- Analysis mode picker comes first: it drives which input shows. -->
+        <div class="mode-picker">
+          <label class="field-label">{{ $t('timeDialog.analysisMode') }}</label>
+          <v-select
+            v-model="analysisMode"
+            :items="analysisModes"
+            variant="outlined"
+            density="compact"
+            hide-details
+            @update:model-value="updateSettings"
+          ></v-select>
+          <p class="mode-description">{{ currentModeDescription }}</p>
+        </div>
+
+        <v-divider class="my-4"></v-divider>
+
+        <div class="setting-block" v-if="analysisMode === 'advanced'">
+          <label class="field-label">{{ $t('timeDialog.advanced') }}</label>
           <div class="advanced-container">
             <div class="code-editor-container">
               <v-textarea
@@ -76,8 +91,8 @@
             </v-expansion-panels>
           </div>
         </div>
-        <div class="setting-item" v-if="analysisMode === 'movetime'">
-          <label class="setting-label">{{ $t('timeDialog.movetime') }}</label>
+        <div class="setting-block" v-if="analysisMode === 'movetime'">
+          <label class="field-label">{{ $t('timeDialog.movetime') }}</label>
           <v-text-field
             v-model.number="movetime"
             type="number"
@@ -87,13 +102,17 @@
             :max="10000"
             :step="100"
             hide-details
-            class="setting-input"
+            class="setting-input mono-input"
+            suffix="ms"
             @update:model-value="updateSettings"
           ></v-text-field>
+          <p class="field-hint">
+            {{ $t('timeDialog.rangeHint', { min: 100, max: 10000 }) }}
+          </p>
         </div>
 
-        <div class="setting-item" v-if="analysisMode === 'maxThinkTime'">
-          <label class="setting-label">{{
+        <div class="setting-block" v-if="analysisMode === 'maxThinkTime'">
+          <label class="field-label">{{
             $t('timeDialog.maxThinkTime')
           }}</label>
           <v-text-field
@@ -105,13 +124,17 @@
             :max="60000"
             :step="100"
             hide-details
-            class="setting-input"
+            class="setting-input mono-input"
+            suffix="ms"
             @update:model-value="updateSettings"
           ></v-text-field>
+          <p class="field-hint">
+            {{ $t('timeDialog.rangeHint', { min: 100, max: 60000 }) }}
+          </p>
         </div>
 
-        <div class="setting-item" v-if="analysisMode === 'depth'">
-          <label class="setting-label">{{ $t('timeDialog.maxDepth') }}</label>
+        <div class="setting-block" v-if="analysisMode === 'depth'">
+          <label class="field-label">{{ $t('timeDialog.maxDepth') }}</label>
           <v-text-field
             v-model.number="maxDepth"
             type="number"
@@ -121,13 +144,16 @@
             :max="100"
             :step="1"
             hide-details
-            class="setting-input"
+            class="setting-input mono-input"
             @update:model-value="updateSettings"
           ></v-text-field>
+          <p class="field-hint">
+            {{ $t('timeDialog.rangeHint', { min: 1, max: 100 }) }}
+          </p>
         </div>
 
-        <div class="setting-item" v-if="analysisMode === 'nodes'">
-          <label class="setting-label">{{ $t('timeDialog.maxNodes') }}</label>
+        <div class="setting-block" v-if="analysisMode === 'nodes'">
+          <label class="field-label">{{ $t('timeDialog.maxNodes') }}</label>
           <v-text-field
             v-model.number="maxNodes"
             type="number"
@@ -137,40 +163,47 @@
             :max="10000000"
             :step="1000"
             hide-details
-            class="setting-input"
+            class="setting-input mono-input"
             @update:model-value="updateSettings"
           ></v-text-field>
-        </div>
-
-        <div class="setting-item">
-          <label class="setting-label">{{
-            $t('timeDialog.analysisMode')
-          }}</label>
-          <v-select
-            v-model="analysisMode"
-            :items="analysisModes"
-            variant="outlined"
-            density="compact"
-            hide-details
-            class="setting-input"
-            @update:model-value="updateSettings"
-          ></v-select>
+          <p class="field-hint">
+            {{ $t('timeDialog.rangeHint', { min: 1000, max: 10000000 }) }}
+          </p>
         </div>
       </v-card-text>
 
       <v-card-actions class="dialog-actions">
-        <v-btn color="grey" @click="resetToDefaults">{{
+        <v-btn variant="text" @click="resetToDefaults">{{
           $t('timeDialog.resetToDefaults')
         }}</v-btn>
-        <v-btn color="error" @click="clearSettings">{{
+        <v-btn variant="text" color="error" @click="clearSettings">{{
           $t('timeDialog.clearSettings')
         }}</v-btn>
         <v-spacer></v-spacer>
-        <v-btn color="primary" @click="closeDialog">{{
+        <v-btn color="primary" variant="flat" @click="closeDialog">{{
           $t('common.confirm')
         }}</v-btn>
       </v-card-actions>
     </v-card>
+
+    <!-- Clear-settings confirmation (replaces native confirm()) -->
+    <v-dialog v-model="showClearConfirm" max-width="420px">
+      <v-card>
+        <v-card-title class="confirm-title">{{
+          $t('timeDialog.clearSettings')
+        }}</v-card-title>
+        <v-card-text>{{ $t('timeDialog.confirmClearSettings') }}</v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn variant="text" @click="showClearConfirm = false">{{
+            $t('common.cancel')
+          }}</v-btn>
+          <v-btn color="error" variant="flat" @click="confirmClearSettings">{{
+            $t('common.confirm')
+          }}</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-dialog>
 </template>
 
@@ -178,7 +211,7 @@
   import { ref, computed, onMounted } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { useConfigManager } from '../composables/useConfigManager'
-  import { useTheme } from 'vuetify'
+  import DialogHeader from './DialogHeader.vue'
   import hljs from 'highlight.js/lib/core'
   import javascript from 'highlight.js/lib/languages/javascript'
   import 'highlight.js/styles/github.css'
@@ -189,10 +222,6 @@
 
   // Initialize highlight.js
   hljs.registerLanguage('javascript', javascript)
-
-  // Theme detection
-  const theme = useTheme()
-  const isDark = computed(() => theme.global.current.value.dark)
 
   // Analysis mode options
   const analysisModes = computed(() => [
@@ -205,6 +234,12 @@
     { title: t('timeDialog.analysisModes.nodes'), value: 'nodes' },
     { title: t('timeDialog.analysisModes.advanced'), value: 'advanced' },
   ])
+
+  // A plain explanation of the currently selected mode, shown under the picker
+  // so a user can tell "move time" from "max think time" without prior knowledge.
+  const currentModeDescription = computed(() =>
+    t(`timeDialog.modeDescriptions.${analysisMode.value}`)
+  )
 
   // Component properties definition
   interface Props {
@@ -395,22 +430,25 @@
     await updateSettings()
   }
 
-  // Clear settings
-  const clearSettings = async () => {
-    if (confirm(t('timeDialog.confirmClearSettings'))) {
-      // Reset to default values
-      movetime.value = 1000
-      maxThinkTime.value = 5000
-      maxDepth.value = 20
-      maxNodes.value = 1000000
-      analysisMode.value = 'movetime'
-      advancedScript.value = ''
+  // Clear settings — opens an in-app confirmation instead of native confirm().
+  const showClearConfirm = ref(false)
 
-      // Clear config storage - no need to remove specific key, just save defaults
-      await updateSettings()
+  const clearSettings = () => {
+    showClearConfirm.value = true
+  }
 
-      // console.log(t('timeDialog.settingsCleared'));
-    }
+  const confirmClearSettings = async () => {
+    // Reset to default values
+    movetime.value = 1000
+    maxThinkTime.value = 5000
+    maxDepth.value = 20
+    maxNodes.value = 1000000
+    analysisMode.value = 'movetime'
+    advancedScript.value = ''
+
+    // Clear config storage - no need to remove specific key, just save defaults
+    await updateSettings()
+    showClearConfirm.value = false
   }
 
   // Close the dialog
@@ -439,59 +477,60 @@
 </script>
 
 <style lang="scss" scoped>
-  .dialog-title {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 16px 24px;
-
-    .v-icon {
-      color: white;
-    }
-  }
-
   .settings-container {
-    padding: 20px;
+    padding: 20px 24px;
   }
 
-  .setting-item {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 20px;
-
-    &:last-child {
-      margin-bottom: 0;
-    }
-  }
-
-  .setting-label {
-    font-weight: 500;
+  .field-label {
+    display: block;
+    font-weight: 600;
     color: rgb(var(--v-theme-on-surface));
-    min-width: 120px;
     font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  .mode-description {
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgba(var(--v-theme-on-surface), 0.62);
+  }
+
+  .setting-block {
+    display: flex;
+    flex-direction: column;
   }
 
   .setting-input {
-    flex: 1;
-    max-width: 200px;
+    max-width: 240px;
+  }
+
+  .mono-input :deep(input) {
+    font-family: var(--jb-mono, monospace);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .field-hint {
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: rgba(var(--v-theme-on-surface), 0.55);
+    font-family: var(--jb-mono, monospace);
+  }
+
+  .confirm-title {
+    font-size: 16px;
+    font-weight: 600;
   }
 
   .dialog-actions {
-    padding: 16px 24px;
-    background: rgb(var(--v-theme-surface));
+    padding: 12px 20px;
+    border-top: 1px solid var(--jb-line, rgba(var(--v-border-color), 0.16));
 
     .v-btn {
       text-transform: none;
       font-weight: 500;
     }
-  }
-
-  .v-theme--dark .dialog-actions {
-    background: rgb(30, 30, 30) !important;
-  }
-
-  .v-theme--light .dialog-actions {
-    background: rgb(245, 245, 245) !important;
   }
 
   .advanced-container {

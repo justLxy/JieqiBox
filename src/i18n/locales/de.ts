@@ -331,6 +331,7 @@ prev.prev - Vorheriger-vorheriger Zug (unendlich verschachtelbar)`,
     undockPanel: 'Panel abdocken',
     dockPanel: 'Panel andocken',
     restorePanels: 'Panel-Layout wiederherstellen',
+    panelsRestored: 'Panel-Layout zurückgesetzt',
     flipBoard: 'Brett drehen',
     flipBoardBack: 'Richtung wiederherstellen',
     ponderMode: 'Ponder-Modus',
@@ -401,6 +402,8 @@ prev.prev - Vorheriger-vorheriger Zug (unendlich verschachtelbar)`,
       'Sind Sie sicher, dass Sie die Engine "{name}" löschen möchten? Dies kann nicht rückgängig gemacht werden.',
     promptEngineName:
       'Bitte geben Sie einen eindeutigen Namen für die Engine ein:',
+    promptEnginePath:
+      'Geben Sie den absoluten Pfad der Engine auf diesem Rechner ein (die lokale Brücke startet sie):',
     promptEngineArgs:
       'Bitte geben Sie Kommandozeilen-Argumente ein (optional, leer lassen falls unbekannt):',
     promptHasNnue: 'Verwendet diese Engine NNUE-Dateien? (j/n):',

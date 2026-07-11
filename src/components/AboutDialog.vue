@@ -124,8 +124,7 @@
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted } from 'vue'
   import { useI18n } from 'vue-i18n'
-  import { invoke } from '@tauri-apps/api/core'
-  import { listen } from '@tauri-apps/api/event'
+  import { isTauri } from '@/utils/runtime'
 
   // Import version from package.json
   import packageJson from '../../package.json'
@@ -204,9 +203,13 @@
       if (window.ExternalUrlInterface) {
         // Use Android JavaScript interface to open external browser
         window.ExternalUrlInterface.openExternalUrl(url)
-      } else {
-        // Use Tauri's API for other platforms
+      } else if (isTauri()) {
+        // Use Tauri's API for other native platforms
+        const { invoke } = await import('@tauri-apps/api/core')
         await invoke('open_external_url', { url })
+      } else {
+        // Web build: open in a new browser tab
+        window.open(url, '_blank', 'noopener,noreferrer')
       }
     } catch (error) {
       console.error('Failed to open external link:', error)
@@ -217,8 +220,10 @@
   let unlistenExternalUrl: (() => void) | null = null
 
   onMounted(async () => {
+    if (!isTauri()) return // No native event bus in the browser.
     try {
       // Listen for external URL events from Tauri (Android platform)
+      const { listen } = await import('@tauri-apps/api/event')
       unlistenExternalUrl = await listen('open-external-url', event => {
         const url = event.payload as string
         if (window.ExternalUrlInterface) {

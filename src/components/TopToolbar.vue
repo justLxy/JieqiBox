@@ -1,66 +1,45 @@
 <template>
   <div class="top-toolbar">
     <div class="toolbar-left">
-      <v-btn
+      <ToolbarButton
         icon="mdi-chess-king"
-        size="small"
-        color="teal"
-        variant="text"
+        :label="$t('toolbar.newGame')"
+        :disabled="isMatchRunning"
         @click="setupNewGame"
-        :disabled="isMatchRunning"
-        :title="$t('toolbar.newGame')"
       />
-      <v-btn
+      <ToolbarButton
         icon="mdi-pencil-box"
-        size="small"
-        color="amber"
-        variant="text"
-        @click="handleEditPosition"
+        :label="$t('toolbar.editPosition')"
         :disabled="isMatchRunning"
-        :title="$t('toolbar.editPosition')"
+        @click="handleEditPosition"
       />
-      <v-btn
+      <ToolbarButton
         icon="mdi-view-dashboard-outline"
-        size="small"
-        color="lime"
-        variant="text"
+        :label="$t('toolbar.interfaceSettings')"
         @click="showInterfaceSettingsDialog = true"
-        :title="$t('toolbar.interfaceSettings')"
       />
       <!-- Dark mode toggle button -->
-      <v-btn
+      <ToolbarButton
         :icon="darkMode ? 'mdi-weather-sunny' : 'mdi-weather-night'"
-        size="small"
-        :color="darkMode ? 'orange' : 'blue-grey'"
-        variant="text"
+        :label="darkMode ? $t('toolbar.lightMode') : $t('toolbar.darkMode')"
         @click="toggleDarkMode"
-        :title="darkMode ? $t('toolbar.lightMode') : $t('toolbar.darkMode')"
       />
-      <v-btn
+      <ToolbarButton
         icon="mdi-content-save"
-        size="small"
-        color="success"
-        variant="text"
-        @click="handleSaveNotation"
+        :label="$t('toolbar.saveNotation')"
         :loading="isSaving"
-        :title="$t('toolbar.saveNotation')"
+        @click="handleSaveNotation"
       />
-      <v-btn
+      <ToolbarButton
         icon="mdi-clipboard-text"
-        size="small"
-        color="cyan"
-        variant="text"
-        @click="showNotationTextDialog = true"
+        :label="$t('toolbar.viewPasteNotation')"
         :disabled="isMatchRunning"
-        :title="$t('toolbar.viewPasteNotation')"
+        @click="showNotationTextDialog = true"
       />
-      <v-btn
+      <ToolbarButton
         icon="mdi-book-open-variant"
-        size="small"
-        color="deep-purple"
-        variant="text"
+        :label="$t('toolbar.openingBook')"
         @click="showOpeningBookDialog = true"
-        :title="$t('toolbar.openingBook')"
       />
     </div>
 
@@ -69,59 +48,41 @@
     </div>
 
     <div class="toolbar-right">
-      <v-btn
+      <ToolbarButton
         icon="mdi-cog"
-        size="small"
-        color="purple"
-        variant="text"
-        @click="showUciOptionsDialog = true"
+        :label="$t('toolbar.uciSettings')"
         :disabled="isAnalyzing || engineState.isPondering?.value"
-        :title="$t('toolbar.uciSettings')"
+        @click="showUciOptionsDialog = true"
       />
-      <v-btn
+      <ToolbarButton
         icon="mdi-timer"
-        size="small"
-        color="indigo"
-        variant="text"
+        :label="$t('toolbar.analysisParams')"
         @click="showTimeDialog = true"
-        :title="$t('toolbar.analysisParams')"
       />
-      <v-btn
+      <ToolbarButton
         icon="mdi-clipboard-pulse"
-        size="small"
-        color="deep-orange"
-        variant="text"
-        @click="showReviewDialog = true"
+        :label="$t('toolbar.reviewAnalysis')"
         :disabled="isMatchRunning || isAnalyzing"
-        :title="$t('toolbar.reviewAnalysis')"
+        @click="showReviewDialog = true"
       />
-      <v-btn
+      <ToolbarButton
         icon="mdi-close-circle"
-        size="small"
-        color="deep-purple"
-        variant="text"
-        @click="handleVariation"
+        :label="$t('toolbar.variation')"
         :disabled="!isVariationAvailable"
-        :title="$t('toolbar.variation')"
+        @click="handleVariation"
       />
-      <v-btn
+      <ToolbarButton
         icon="mdi-ray-start-arrow"
-        size="small"
-        color="green"
-        variant="text"
-        @click="handleAnalyzeDrawings"
+        :label="$t('toolbar.analyzeDrawings')"
         :disabled="!isAnalyzeDrawingsAvailable"
-        :title="$t('toolbar.analyzeDrawings')"
+        @click="handleAnalyzeDrawings"
       />
-      <v-btn
+      <ToolbarButton
         icon="mdi-folder-open"
-        size="small"
-        color="blue-grey"
-        variant="text"
-        @click="handleOpenNotation"
+        :label="$t('toolbar.openNotation')"
         :loading="isOpening"
         :disabled="isMatchRunning"
-        :title="$t('toolbar.openNotation')"
+        @click="handleOpenNotation"
       />
       <LanguageSelector />
     </div>
@@ -161,6 +122,7 @@
   import NotationTextDialog from './NotationTextDialog.vue'
   import ReviewAnalysisDialog from './ReviewAnalysisDialog.vue'
   import OpeningBookDialog from './OpeningBookDialog.vue'
+  import ToolbarButton from './ToolbarButton.vue'
   import { useInterfaceSettings } from '../composables/useInterfaceSettings'
 
   const { t } = useI18n()
@@ -546,10 +508,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 16px;
-    border-bottom: 1px solid
-      rgba(var(--v-border-color), var(--v-border-opacity));
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    padding: 6px 14px;
+    border-bottom: 1px solid rgba(var(--v-border-color), 0.14);
     background-color: rgb(var(--v-theme-surface));
 
     // Mobile responsive adjustments
@@ -582,12 +542,14 @@
   }
 
   .game-title {
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 600;
+    letter-spacing: 0.08em;
+    color: rgba(var(--v-theme-on-surface), 0.85);
 
     // Mobile responsive adjustments
     @media (max-width: 768px) {
-      font-size: 16px;
+      font-size: 13px;
     }
   }
 </style>

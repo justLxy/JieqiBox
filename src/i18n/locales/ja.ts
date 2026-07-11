@@ -327,6 +327,7 @@ prev.prev - 前々の手（無限ネスト対応）`,
     undockPanel: 'パネルを切り離し',
     dockPanel: 'パネルをドック',
     restorePanels: 'パネルレイアウトを復元',
+    panelsRestored: 'パネルレイアウトを既定に戻しました',
     flipBoard: '盤を反転',
     flipBoardBack: '向きを復元',
     ponderMode: 'ポンダーモード',
@@ -396,6 +397,8 @@ prev.prev - 前々の手（無限ネスト対応）`,
     confirmDeleteMessage:
       'エンジン「{name}」を本当に削除しますか？この操作は元に戻せません。',
     promptEngineName: 'エンジンの一意な名前を入力してください：',
+    promptEnginePath:
+      'このマシン上のエンジン実行ファイルの絶対パスを入力してください（ローカルブリッジが起動します）：',
     promptEngineArgs:
       'エンジンのコマンドライン引数を入力してください（任意、不明な場合は空欄）：',
     promptHasNnue: 'このエンジンはNNUEファイルを使用しますか？(y/n):',

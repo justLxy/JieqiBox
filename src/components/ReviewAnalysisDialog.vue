@@ -1,34 +1,61 @@
 <template>
-  <v-dialog v-model="isVisible" width="440" persistent>
+  <v-dialog v-model="isVisible" width="460" persistent>
     <v-card>
-      <v-card-title>{{ $t('reviewDialog.title') }}</v-card-title>
-      <v-card-text>
-        <div style="display: flex; gap: 12px; align-items: center">
-          <v-text-field
-            v-model.number="reviewMovetime"
-            :label="$t('reviewDialog.movetime')"
-            type="number"
-            density="compact"
-            variant="outlined"
-            min="100"
-          />
-          <div v-if="isReviewing">
-            {{
-              $t('reviewDialog.progress', {
-                current: reviewProgress,
-                total: reviewTotal,
-              })
-            }}
+      <DialogHeader
+        :title="$t('reviewDialog.title')"
+        :subtitle="$t('reviewDialog.subtitle')"
+        icon="mdi-clipboard-pulse"
+        @close="handleCancel"
+      />
+      <v-card-text class="review-body">
+        <p class="review-intro">{{ $t('reviewDialog.description') }}</p>
+
+        <label class="field-label">{{ $t('reviewDialog.movetime') }}</label>
+        <v-text-field
+          v-model.number="reviewMovetime"
+          type="number"
+          density="compact"
+          variant="outlined"
+          min="100"
+          hide-details
+          suffix="ms"
+          class="mono-input review-input"
+          :disabled="isReviewing"
+        />
+        <p class="field-hint">{{ $t('reviewDialog.movetimeHint') }}</p>
+
+        <div v-if="isReviewing" class="review-progress">
+          <div class="review-progress__row">
+            <span>{{ $t('reviewDialog.analyzing') }}</span>
+            <span class="review-progress__count"
+              >{{ reviewProgress }} / {{ reviewTotal }}</span
+            >
           </div>
+          <v-progress-linear
+            :model-value="progressPercent"
+            color="primary"
+            height="6"
+            rounded
+          />
         </div>
+
+        <v-alert
+          v-if="showNoEngine"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="mt-3"
+          >{{ $t('analysis.noEngineLoaded') }}</v-alert
+        >
       </v-card-text>
-      <v-card-actions>
+      <v-card-actions class="review-actions">
         <v-spacer />
         <v-btn variant="text" @click="handleCancel" :disabled="isStopping">{{
-          $t('common.cancel')
+          isReviewing ? $t('common.cancel') : $t('common.close')
         }}</v-btn>
         <v-btn
-          color="deep-orange"
+          color="primary"
+          variant="flat"
           @click="startReview"
           :loading="isReviewing"
           :disabled="isReviewing"
@@ -41,11 +68,10 @@
 
 <script setup lang="ts">
   import { computed, inject, nextTick, ref, watch } from 'vue'
-  import { useI18n } from 'vue-i18n'
+  import DialogHeader from './DialogHeader.vue'
 
   const props = defineProps<{ modelValue: boolean }>()
   const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void }>()
-  const { t } = useI18n()
 
   const gameState: any = inject('game-state')
   const engineState: any = inject('engine-state')
@@ -61,6 +87,18 @@
   const reviewProgress = ref(0)
   const reviewTotal = ref(0)
   const cancelRequested = ref(false)
+  const showNoEngine = ref(false)
+
+  const progressPercent = computed(() =>
+    reviewTotal.value > 0
+      ? Math.round((reviewProgress.value / reviewTotal.value) * 100)
+      : 0
+  )
+
+  // Clear the "no engine" warning whenever the dialog is reopened.
+  watch(isVisible, v => {
+    if (v) showNoEngine.value = false
+  })
 
   const MATE_SCORE_BASE = 30000
 
@@ -87,16 +125,10 @@
   ): { score: number | null; depth?: number; nodes?: number } => {
     try {
       const out: any[] = engineState.engineOutput?.value || []
-      console.log('[EXTRACT DEBUG] Engine output length:', out.length)
-      console.log('[EXTRACT DEBUG] Start index (requested):', startIndex)
 
       // If the buffer was cleared during analysis, clamp lowerBound to 0
       const lowerBound =
         startIndex > 0 && startIndex <= out.length - 1 ? startIndex : 0
-      console.log(
-        '[EXTRACT DEBUG] Start index (effective lowerBound):',
-        lowerBound
-      )
 
       let lastLine = ''
       for (let i = out.length - 1; i >= lowerBound; i--) {
@@ -104,19 +136,16 @@
         const text = line?.text || ''
         if (line?.kind === 'recv' && text.includes('score')) {
           lastLine = text
-          console.log('[EXTRACT DEBUG] Found score line at index:', i, text)
           break
         }
       }
 
       if (!lastLine) {
-        console.log('[EXTRACT DEBUG] No score line found')
         return { score: null }
       }
 
       const m = lastLine.match(/score\s+(?:(cp|mate)\s+)?(-?\d+)/)
       if (!m) {
-        console.log('[EXTRACT DEBUG] No score match in line:', lastLine)
         return { score: null }
       }
 
@@ -128,30 +157,20 @@
         // In UCI, mate 0 indicates side-to-move is checkmated (losing), treat as negative
         const sign = val === 0 ? -1 : val > 0 ? 1 : -1
         cp = sign * (MATE_SCORE_BASE - ply)
-        console.log('[EXTRACT DEBUG] Mate score conversion:', {
-          val,
-          ply,
-          sign,
-          cp,
-        })
       } else {
         cp = val
-        console.log('[EXTRACT DEBUG] CP score:', cp)
       }
 
       const depthMatch = lastLine.match(/depth\s+(\d+)/)
       const nodesMatch = lastLine.match(/nodes\s+(\d+)/)
 
-      const result = {
+      return {
         score: cp,
         depth: depthMatch ? parseInt(depthMatch[1]) : undefined,
         nodes: nodesMatch ? parseInt(nodesMatch[1]) : undefined,
       }
-
-      console.log('[EXTRACT DEBUG] Final result:', result)
-      return result
     } catch (e) {
-      console.log('[EXTRACT DEBUG] Error extracting score:', e)
+      console.error('Review: failed to extract score from engine output:', e)
       return { score: null }
     }
   }
@@ -165,9 +184,6 @@
     nodes?: number
     timeUsed?: number
   }> => {
-    console.log('[ANALYZE DEBUG] Starting analysis with FEN:', fen)
-    console.log('[ANALYZE DEBUG] Movetime:', movetimeMs)
-
     const startLen = (engineState.engineOutput?.value || []).length
     const settings = {
       movetime: Math.max(100, Math.floor(movetimeMs)),
@@ -176,9 +192,6 @@
       maxNodes: 0,
       analysisMode: 'movetime',
     }
-
-    console.log('[ANALYZE DEBUG] Analysis settings:', settings)
-    console.log('[ANALYZE DEBUG] Engine output start length:', startLen)
 
     if (engineState.stopAnalysis) {
       engineState.stopAnalysis({ playBestMoveOnStop: false })
@@ -189,26 +202,14 @@
     await waitForEngineStop()
     const timeUsed = Date.now() - startTs
 
-    console.log('[ANALYZE DEBUG] Analysis completed, time used:', timeUsed)
-
     let { score, depth, nodes } = extractScoreFromOutput(startLen)
     // Fallback if nothing found (e.g., buffer cleared during analysis)
     if (score === null) {
-      console.log(
-        '[ANALYZE DEBUG] No score found with startLen. Retrying full scan...'
-      )
       const retry = extractScoreFromOutput(0)
       score = retry.score
       depth = retry.depth
       nodes = retry.nodes
     }
-
-    console.log('[ANALYZE DEBUG] Extracted result:', {
-      score,
-      depth,
-      nodes,
-      timeUsed,
-    })
 
     return { score, depth, nodes, timeUsed }
   }
@@ -279,9 +280,10 @@
 
   const startReview = async () => {
     if (!engineState?.isEngineLoaded?.value) {
-      alert(t('analysis.noEngineLoaded'))
+      showNoEngine.value = true
       return
     }
+    showNoEngine.value = false
     try {
       isReviewing.value = true
       isStopping.value = false
@@ -295,10 +297,6 @@
         const entry = history[idx]
         if (!entry || entry.type !== 'move') continue
 
-        console.log('[REVIEW DEBUG] Analyzing move at index:', idx)
-        console.log('[REVIEW DEBUG] Move data:', entry.data)
-        console.log('[REVIEW DEBUG] Move FEN:', entry.fen)
-
         // Replay UI to the position before this move for correct analysis context
         gameState.replayToMove?.(idx)
         await nextTick()
@@ -307,32 +305,13 @@
           idx === 0 ? gameState.initialFen?.value : history[idx - 1].fen
         const fenAfter = entry.fen
 
-        console.log('[REVIEW DEBUG] FEN before move:', fenBefore)
-        console.log('[REVIEW DEBUG] FEN after move:', fenAfter)
-
         // Analyze position before the move (mover to play)
-        console.log('[REVIEW DEBUG] Analyzing position before move...')
         const beforeRes = await analyzeOnce(fenBefore, reviewMovetime.value)
         if (cancelRequested.value) break
 
-        console.log('[REVIEW DEBUG] Before analysis result:', {
-          score: beforeRes.score,
-          depth: beforeRes.depth,
-          nodes: beforeRes.nodes,
-          timeUsed: beforeRes.timeUsed,
-        })
-
         // Analyze position after the move (opponent to play)
-        console.log('[REVIEW DEBUG] Analyzing position after move...')
         const afterRes = await analyzeOnce(fenAfter, reviewMovetime.value)
         if (cancelRequested.value) break
-
-        console.log('[REVIEW DEBUG] After analysis result:', {
-          score: afterRes.score,
-          depth: afterRes.depth,
-          nodes: afterRes.nodes,
-          timeUsed: afterRes.timeUsed,
-        })
 
         const sBefore = beforeRes.score ?? 0
         const sAfter = afterRes.score ?? 0
@@ -340,14 +319,6 @@
         const sAfterFromMoverPerspective = -sAfter
         // Change for mover: eval_after - eval_before (both from mover's perspective)
         const delta = sAfterFromMoverPerspective - sBefore
-
-        console.log('[REVIEW DEBUG] Score calculation:', {
-          sBefore,
-          sAfter,
-          sAfterFromMoverPerspective,
-          delta,
-          finalScore: sBefore,
-        })
 
         // Record the score for the position before the move (what we analyzed)
         const updated = {
@@ -360,15 +331,6 @@
         }
         gameState.history.value[idx] = updated
 
-        console.log('[REVIEW DEBUG] Updated history entry:', {
-          index: idx,
-          move: entry.data,
-          engineScore: updated.engineScore,
-          engineTime: updated.engineTime,
-          engineDepth: updated.engineDepth,
-          engineNodes: updated.engineNodes,
-        })
-
         const ann = pickAnnotation(
           delta,
           beforeRes.score,
@@ -376,13 +338,7 @@
         )
         gameState.updateMoveAnnotation?.(idx, ann)
 
-        console.log('[REVIEW DEBUG] Annotation assigned:', ann)
-
         reviewProgress.value++
-        console.log(
-          '[REVIEW DEBUG] Progress:',
-          `${reviewProgress.value}/${reviewTotal.value}`
-        )
       }
     } catch (e) {
       console.error('Review analysis failed:', e)
@@ -412,3 +368,65 @@
     isVisible.value = false
   }
 </script>
+
+<style lang="scss" scoped>
+  .review-body {
+    padding: 16px 24px 8px;
+  }
+
+  .review-intro {
+    margin: 0 0 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: rgba(var(--v-theme-on-surface), 0.7);
+  }
+
+  .field-label {
+    display: block;
+    font-weight: 600;
+    font-size: 14px;
+    color: rgb(var(--v-theme-on-surface));
+    margin-bottom: 8px;
+  }
+
+  .review-input {
+    max-width: 200px;
+  }
+
+  .mono-input :deep(input) {
+    font-family: var(--jb-mono, monospace);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .field-hint {
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: rgba(var(--v-theme-on-surface), 0.55);
+  }
+
+  .review-progress {
+    margin-top: 20px;
+  }
+
+  .review-progress__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: rgb(var(--v-theme-on-surface));
+  }
+
+  .review-progress__count {
+    font-family: var(--jb-mono, monospace);
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--v-theme-accent));
+    font-weight: 600;
+  }
+
+  .review-actions {
+    padding: 12px 20px;
+    border-top: 1px solid var(--jb-line, rgba(var(--v-border-color), 0.16));
+  }
+</style>

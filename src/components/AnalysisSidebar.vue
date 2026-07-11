@@ -26,7 +26,7 @@
         :color="
           (isMatchMode ? jaiEngine?.isEngineLoaded?.value : isEngineLoaded)
             ? 'success'
-            : 'teal'
+            : 'primary'
         "
         size="x-small"
         class="action-btn"
@@ -62,7 +62,8 @@
       <v-btn
         @click="handleAnalysisButtonClick"
         :disabled="!isEngineLoaded"
-        :color="isThinking || isPondering ? 'warning' : 'deep-purple'"
+        :color="isThinking || isPondering ? 'warning' : 'primary'"
+        variant="flat"
         class="grouped-btn"
         size="small"
       >
@@ -80,7 +81,8 @@
       <div class="button-group">
         <v-btn
           @click="toggleMatchMode"
-          color="success"
+          color="secondary"
+          variant="tonal"
           class="grouped-btn"
           size="small"
         >
@@ -90,7 +92,8 @@
         <v-btn
           @click="handleMatchButtonClick"
           :disabled="!jaiEngine?.isEngineLoaded?.value"
-          :color="jaiEngine?.isMatchRunning?.value ? 'warning' : 'green'"
+          :color="jaiEngine?.isMatchRunning?.value ? 'warning' : 'primary'"
+          variant="flat"
           class="grouped-btn"
           size="small"
         >
@@ -107,7 +110,8 @@
         <v-btn
           @click="showJaiOptionsDialog = true"
           :disabled="!jaiEngine?.isEngineLoaded?.value"
-          color="purple"
+          color="secondary"
+          variant="tonal"
           size="small"
           class="grouped-btn"
           prepend-icon="mdi-cogs"
@@ -117,7 +121,8 @@
 
         <v-btn
           @click="showEloCalculatorDialog = true"
-          color="orange"
+          color="secondary"
+          variant="tonal"
           size="small"
           class="grouped-btn"
           prepend-icon="mdi-calculator"
@@ -131,7 +136,8 @@
     <div v-else-if="isHumanVsAiMode" class="button-group">
       <v-btn
         @click="exitHumanVsAiMode"
-        color="teal"
+        color="secondary"
+        variant="tonal"
         class="grouped-btn"
         size="small"
       >
@@ -143,7 +149,8 @@
     <div v-else class="button-group">
       <v-btn
         @click="toggleMatchMode"
-        color="amber"
+        color="secondary"
+        variant="tonal"
         class="grouped-btn"
         size="small"
       >
@@ -151,7 +158,8 @@
       </v-btn>
       <v-btn
         @click="showHumanVsAiDialog = true"
-        color="teal"
+        color="secondary"
+        variant="tonal"
         class="grouped-btn"
         size="small"
       >
@@ -164,7 +172,8 @@
       <v-btn
         @click="handleUndoMove"
         :disabled="currentMoveIndex <= 0 || isMatchRunning"
-        color="error"
+        color="secondary"
+        variant="tonal"
         class="grouped-btn"
         size="small"
       >
@@ -172,7 +181,8 @@
       </v-btn>
       <v-btn
         @click="toggleBoardFlip()"
-        color="cyan"
+        color="secondary"
+        variant="tonal"
         class="grouped-btn"
         size="small"
       >
@@ -188,7 +198,8 @@
     <div v-if="!isMatchMode && !isHumanVsAiMode" class="autoplay-settings">
       <v-btn
         @click="toggleRedAi"
-        :color="isRedAi ? 'error' : 'blue-grey-darken-1'"
+        :color="isRedAi ? 'primary' : 'secondary'"
+        :variant="isRedAi ? 'flat' : 'tonal'"
         class="half-btn"
         size="small"
         :disabled="isManualAnalysis || !isEngineLoaded"
@@ -197,7 +208,8 @@
       </v-btn>
       <v-btn
         @click="toggleBlackAi"
-        :color="isBlackAi ? 'error' : 'blue-grey-darken-1'"
+        :color="isBlackAi ? 'primary' : 'secondary'"
+        :variant="isBlackAi ? 'flat' : 'tonal'"
         class="half-btn"
         size="small"
         :disabled="isManualAnalysis || !isEngineLoaded"
@@ -209,8 +221,9 @@
     <!-- Panel Layout Control -->
     <div class="button-group">
       <v-btn
-        @click="restoreDefaultLayout"
-        color="grey"
+        @click="handleRestoreLayout"
+        color="secondary"
+        variant="tonal"
         class="grouped-btn"
         size="small"
         prepend-icon="mdi-backup-restore"
@@ -223,7 +236,7 @@
       <v-switch
         v-model="flipMode"
         :label="$t('analysis.freeFlipMode')"
-        color="amber"
+        color="primary"
         true-value="free"
         false-value="random"
         hide-details
@@ -234,7 +247,7 @@
       <v-switch
         v-model="enablePonder"
         :label="$t('analysis.ponderMode')"
-        color="lime"
+        color="primary"
         hide-details
         class="compact-switch"
         density="compact"
@@ -283,8 +296,8 @@
           {{ $t('analysis.darkPiecePool') }}
           <v-chip
             size="x-small"
-            :color="validationStatusKey === 'normal' ? 'green' : 'red'"
-            variant="flat"
+            :color="validationStatusKey === 'normal' ? 'success' : 'error'"
+            variant="tonal"
           >
             {{ validationStatusMessage }}
           </v-chip>
@@ -295,6 +308,11 @@
           v-for="item in unrevealedPiecesForDisplay"
           :key="item.char"
           class="pool-item"
+          :class="
+            item.char === item.char.toUpperCase()
+              ? 'pool-item--red'
+              : 'pool-item--black'
+          "
         >
           <img
             :src="getPieceImageUrl(item.name)"
@@ -1028,6 +1046,18 @@
       :initial-step="pvPreviewTargetStep"
       :title="$t('analysis.fullLine')"
     />
+
+    <!-- Lightweight confirmation for actions with no visible on-screen change
+         (e.g. restoring an already-default panel layout) -->
+    <v-snackbar
+      v-model="showLayoutRestored"
+      :timeout="2000"
+      location="bottom"
+      color="secondary"
+      variant="tonal"
+    >
+      {{ $t('analysis.panelsRestored') }}
+    </v-snackbar>
   </div>
 </template>
 
@@ -1086,6 +1116,15 @@
   const { t } = useI18n()
 
   const { restoreDefaultLayout } = usePanelManager()
+
+  // Restore panel layout, with a confirmation toast. The layout may already be
+  // at its default (nothing undocked), in which case there is no visible
+  // change — the toast makes the click feel acknowledged either way.
+  const showLayoutRestored = ref(false)
+  const handleRestoreLayout = () => {
+    restoreDefaultLayout()
+    showLayoutRestored.value = true
+  }
 
   // Get interface settings
   const {
@@ -3506,7 +3545,11 @@
   .section-title {
     margin: 0 0 6px;
     padding-bottom: 3px;
-    font-size: 0.9rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(var(--v-theme-on-surface), 0.62);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -4113,13 +4156,26 @@
       gap: 4px;
     }
   }
+  /* Signature element: the capture / reveal pool as an instrument panel.
+     A left accent bar encodes the side (cinnabar = red, graphite = black),
+     turning Jieqi's defining "hidden pieces" screen into a live inventory
+     gauge. Everything else in the UI stays quiet so this reads as the hero. */
   .pool-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1px 4px;
-    border-radius: 4px;
-    border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+    padding: 2px 6px 2px 8px;
+    border-radius: var(--jb-radius-sm);
+    border: 1px solid rgba(var(--v-border-color), 0.16);
+    background: rgba(var(--v-theme-on-surface), 0.02);
+    border-left: 3px solid transparent;
+    transition: border-color 0.15s ease;
+  }
+  .pool-item--red {
+    border-left-color: rgb(var(--v-theme-accent));
+  }
+  .pool-item--black {
+    border-left-color: rgba(var(--v-theme-on-surface), 0.55);
   }
   .pool-piece-img {
     width: 20px;
@@ -4138,10 +4194,12 @@
     gap: 2px;
   }
   .pool-count {
-    font-weight: bold;
+    font-weight: 600;
     font-size: 0.9rem;
-    width: 40px;
+    width: 44px;
     text-align: center;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
   }
   .switch-row {
     display: flex;

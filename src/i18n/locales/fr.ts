@@ -330,6 +330,7 @@ prev.prev - L'avant-avant-dernier coup (imbrication infinie)`,
     undockPanel: 'Détacher le panneau',
     dockPanel: 'Ancrer le panneau',
     restorePanels: 'Rétablir la disposition',
+    panelsRestored: 'Disposition des panneaux réinitialisée',
     flipBoard: "Retourner l'échiquier",
     flipBoardBack: "Rétablir l'orientation",
     ponderMode: 'Mode Ponder',
@@ -399,6 +400,8 @@ prev.prev - L'avant-avant-dernier coup (imbrication infinie)`,
     confirmDeleteMessage:
       'Êtes-vous sûr de vouloir supprimer le moteur "{name}" ? Cette action est irréversible.',
     promptEngineName: 'Veuillez entrer un nom unique pour le moteur :',
+    promptEnginePath:
+      "Entrez le chemin absolu du moteur sur cette machine (le pont local le lancera) :",
     promptEngineArgs:
       'Veuillez entrer les arguments de ligne de commande (optionnel) :',
     promptHasNnue: 'Ce moteur utilise-t-il un fichier NNUE ? (o/n) :',

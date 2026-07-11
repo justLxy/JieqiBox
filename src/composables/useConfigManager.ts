@@ -1,7 +1,11 @@
 import { ref, computed } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
 import Ini from 'ini'
 import { isAndroidPlatform as checkAndroidPlatform } from '../utils/platform'
+import {
+  loadConfigString,
+  saveConfigString,
+  clearConfigString,
+} from '../utils/storage'
 
 // Add this new interface and export it
 export interface ManagedEngine {
@@ -160,7 +164,7 @@ export function useConfigManager() {
   // Load configuration from file
   const loadConfig = async (): Promise<void> => {
     try {
-      const loadedConfig = await invoke<string>('load_config')
+      const loadedConfig = await loadConfigString()
       if (loadedConfig) {
         const parsedConfig = Ini.parse(loadedConfig)
 
@@ -243,7 +247,7 @@ export function useConfigManager() {
   const saveConfig = async (): Promise<void> => {
     try {
       const configIni = Ini.stringify(configData.value)
-      await invoke('save_config', { content: configIni })
+      await saveConfigString(configIni)
     } catch (error) {
       console.error('Failed to save configuration:', error)
     }
@@ -480,7 +484,7 @@ export function useConfigManager() {
   // Clear all configuration
   const clearAllConfig = async (): Promise<void> => {
     try {
-      await invoke('clear_config')
+      await clearConfigString()
       configData.value = { ...defaultConfig }
     } catch (error) {
       console.error('Failed to clear configuration:', error)

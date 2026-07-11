@@ -1,6 +1,15 @@
 // Opening book composable for managing opening book functionality
 import { ref, computed, reactive, watch } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { isTauri } from '@/utils/runtime'
+import {
+  webAddEntry,
+  webDeleteEntry,
+  webQueryMoves,
+  webImportEntries,
+  webExportAll,
+  webGetStats,
+  webClearAll,
+} from './openingBook/webOpeningBook'
 import type {
   MoveData,
   OpeningBookEntry,
@@ -9,6 +18,15 @@ import type {
   JieqiOpeningBookConfig,
 } from '@/types/openingBook'
 import { useInterfaceSettings } from './useInterfaceSettings'
+
+// Lazy Tauri invoke so the web bundle never loads the native core.
+const tauriInvoke = async <T>(
+  cmd: string,
+  args?: Record<string, unknown>
+): Promise<T> => {
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke<T>(cmd, args)
+}
 
 export function useOpeningBook() {
   const isInitialized = ref(true) // SQLite database is always available
@@ -79,18 +97,29 @@ export function useOpeningBook() {
     comment: string = ''
   ): Promise<boolean> => {
     try {
-      const success = await invoke<boolean>('opening_book_add_entry', {
-        request: {
-          fen,
-          uci_move: uciMove,
-          priority,
-          wins,
-          draws,
-          losses,
-          allowed,
-          comment,
-        },
-      })
+      const success = isTauri()
+        ? await tauriInvoke<boolean>('opening_book_add_entry', {
+            request: {
+              fen,
+              uci_move: uciMove,
+              priority,
+              wins,
+              draws,
+              losses,
+              allowed,
+              comment,
+            },
+          })
+        : webAddEntry(
+            fen,
+            uciMove,
+            priority,
+            wins,
+            draws,
+            losses,
+            allowed,
+            comment
+          )
       if (success) {
         await updateStats()
       }
@@ -108,10 +137,12 @@ export function useOpeningBook() {
     uciMove: string
   ): Promise<boolean> => {
     try {
-      const success = await invoke<boolean>('opening_book_delete_entry', {
-        fen,
-        uciMove,
-      })
+      const success = isTauri()
+        ? await tauriInvoke<boolean>('opening_book_delete_entry', {
+            fen,
+            uciMove,
+          })
+        : webDeleteEntry(fen, uciMove)
       if (success) {
         await updateStats()
       }
@@ -127,9 +158,9 @@ export function useOpeningBook() {
   // Query moves for a given position (independent from enableInGame; UI controls visibility)
   const queryMoves = async (fen: string): Promise<MoveData[]> => {
     try {
-      const moves = await invoke<MoveData[]>('opening_book_query_moves', {
-        fen,
-      })
+      const moves = isTauri()
+        ? await tauriInvoke<MoveData[]>('opening_book_query_moves', { fen })
+        : webQueryMoves(fen)
       currentBookMoves.value = moves
       return moves
     } catch (err) {
@@ -171,13 +202,11 @@ export function useOpeningBook() {
     data: OpeningBookEntry[]
   ): Promise<OpeningBookImportResult> => {
     try {
-      const jsonData = JSON.stringify(data)
-      const [imported, errors] = await invoke<[number, string[]]>(
-        'opening_book_import_entries',
-        {
-          jsonData,
-        }
-      )
+      const [imported, errors] = isTauri()
+        ? await tauriInvoke<[number, string[]]>('opening_book_import_entries', {
+            jsonData: JSON.stringify(data),
+          })
+        : webImportEntries(data)
 
       await updateStats()
 
@@ -200,7 +229,8 @@ export function useOpeningBook() {
   // Export opening book data
   const exportData = async (): Promise<OpeningBookEntry[]> => {
     try {
-      const jsonData = await invoke<string>('opening_book_export_all')
+      if (!isTauri()) return webExportAll()
+      const jsonData = await tauriInvoke<string>('opening_book_export_all')
       return JSON.parse(jsonData)
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to export data'
@@ -212,7 +242,9 @@ export function useOpeningBook() {
   // Update statistics
   const updateStats = async (): Promise<void> => {
     try {
-      const raw = await invoke<any>('opening_book_get_stats')
+      const raw = isTauri()
+        ? await tauriInvoke<any>('opening_book_get_stats')
+        : webGetStats()
       // Map snake_case from backend to camelCase used in frontend
       const mapped: OpeningBookStats = {
         totalPositions:
@@ -233,7 +265,8 @@ export function useOpeningBook() {
   // Clear all data
   const clearAll = async (): Promise<boolean> => {
     try {
-      await invoke<void>('opening_book_clear_all')
+      if (isTauri()) await tauriInvoke<void>('opening_book_clear_all')
+      else webClearAll()
       await updateStats()
       currentBookMoves.value = []
       return true

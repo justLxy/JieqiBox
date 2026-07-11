@@ -1,6 +1,10 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import {
+  spawnEngine,
+  sendToEngine,
+  killEngine,
+  onEngineOutput,
+} from './engine/engineBridge'
 import { useI18n } from 'vue-i18n'
 import { useConfigManager, type ManagedEngine } from './useConfigManager' // Import new types
 import { useInterfaceSettings } from './useInterfaceSettings'
@@ -377,7 +381,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
     // Teardown previous engine if any
     if (isThinking.value) stopAnalysis({ playBestMoveOnStop: false })
     if (isPondering.value) stopPonder({ playBestMoveOnStop: false })
-    await invoke('kill_engine').catch(e =>
+    await killEngine().catch(e =>
       console.warn('Failed to kill previous engine:', e)
     )
 
@@ -395,8 +399,8 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
       }, validationTimeout.value)
 
       // Listen specifically for the uciok signal
-      listen<string>('engine-output', event => {
-        if (event.payload.trim() === 'uciok') {
+      onEngineOutput(line => {
+        if (line.trim() === 'uciok') {
           console.log(
             `[DEBUG] Received uciok for ${engine.name}. Validation successful.`
           )
@@ -416,7 +420,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
       console.log(
         `[DEBUG] Spawning engine: ${engine.name}, Path: ${engine.path}, Args: ${engine.args}`
       )
-      await invoke('spawn_engine', {
+      await spawnEngine({
         path: engine.path,
         args: engine.args.split(' ').filter(Boolean),
       })
@@ -484,7 +488,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
       // Clear the last selected engine ID if loading fails
       const configManager = useConfigManager()
       await configManager.clearLastSelectedEngineId()
-      await invoke('kill_engine').catch(err =>
+      await killEngine().catch(err =>
         console.warn('Failed to kill invalid engine:', err)
       )
     } finally {
@@ -543,7 +547,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
       )
     }
 
-    invoke('send_to_engine', { command: cmd }).catch(e => {
+    sendToEngine(cmd).catch(e => {
       // Don't alert here, it can be noisy during initial load failure
       console.warn('Failed to send to engine:', e)
     })
@@ -575,8 +579,8 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
       }, 5000)
 
       // Listen for readyok response
-      listen<string>('engine-output', event => {
-        if (event.payload.trim() === 'readyok') {
+      onEngineOutput(line => {
+        if (line.trim() === 'readyok') {
           console.log(
             '[DEBUG] UCI_NEWGAME: Received readyok, new game initialized'
           )
@@ -1047,7 +1051,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
       await new Promise(resolve => setTimeout(resolve, 100))
 
       // As a fallback, also kill the engine process
-      await invoke('kill_engine')
+      await killEngine()
       console.log(
         '[DEBUG] UNLOAD_ENGINE: Engine process terminated successfully'
       )
@@ -1125,8 +1129,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
   /* ---------- Listen to Output ---------- */
   onMounted(async () => {
     // Central listener for all engine output for logging/display
-    unlisten = await listen<string>('engine-output', ev => {
-      const raw_ln = ev.payload
+    unlisten = await onEngineOutput(raw_ln => {
       console.log(`[DEBUG] ENGINE_RAW_OUTPUT: ${raw_ln}`)
       queueOutputLine(raw_ln)
     })
@@ -1177,7 +1180,7 @@ export function useUciEngine(generateFen: () => string, gameState: any) {
   })
   onUnmounted(() => {
     unlisten?.()
-    invoke('kill_engine') // Kill engine on component unmount
+    killEngine() // Kill engine on component unmount
     resetThrottling()
   })
 

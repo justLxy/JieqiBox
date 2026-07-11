@@ -1,7 +1,10 @@
 import { onMounted, onUnmounted } from 'vue'
-import { getCurrentWindow } from '@tauri-apps/api/window'
-import { LogicalSize, LogicalPosition } from '@tauri-apps/api/window'
 import { useConfigManager } from './useConfigManager'
+import { isTauri } from '../utils/runtime'
+
+// Lazily load the Tauri window API so the web bundle never imports it. Only
+// called from code paths already guarded by isTauri().
+const getTauriWindowApi = () => import('@tauri-apps/api/window')
 
 export interface WindowSettings {
   width: number
@@ -29,7 +32,10 @@ export function useWindowManager() {
 
   // Restore window size and position from config
   const restoreWindowState = async (): Promise<void> => {
+    if (!isTauri()) return // No OS window to manage in the browser.
     try {
+      const { getCurrentWindow, LogicalSize, LogicalPosition } =
+        await getTauriWindowApi()
       const tauriWindow = getCurrentWindow()
       const savedSettings = getWindowSettings()
 
@@ -155,7 +161,9 @@ export function useWindowManager() {
 
   // Save current window state to config
   const saveWindowState = async (): Promise<void> => {
+    if (!isTauri()) return // No OS window to persist in the browser.
     try {
+      const { getCurrentWindow } = await getTauriWindowApi()
       const tauriWindow = getCurrentWindow()
       const size = await tauriWindow.innerSize()
       const position = await tauriWindow.outerPosition()
@@ -206,7 +214,9 @@ export function useWindowManager() {
 
   // Set up window event listeners
   const setupWindowListeners = async (): Promise<void> => {
+    if (!isTauri()) return // No window events in the browser.
     try {
+      const { getCurrentWindow } = await getTauriWindowApi()
       const tauriWindow = getCurrentWindow()
 
       // Listen for window resize events

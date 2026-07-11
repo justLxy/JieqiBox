@@ -1,0 +1,130 @@
+/**
+ * JieqiBox global theme refinements — "Graphite & Cinnabar".
+ *
+ * The Vuetify theme (main.ts) supplies the color tokens; this layer refines the
+ * shape language of the whole app: a consistent radius scale, hairline borders
+ * in place of heavy drop shadows, a monospace treatment for engine data, quiet
+ * focus rings in the accent, and a slim scrollbar. Goal: a professional
+ * analysis workbench, not a Material Design demo.
+ */
+
+:root {
+  /* Shape scale */
+  --jb-radius-sm: 6px;
+  --jb-radius: 8px;
+  --jb-radius-lg: 10px;
+
+  /* One soft elevation, used sparingly instead of many drop shadows */
+  --jb-elevation: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.05);
+
+  /* Monospace for all engine data (scores, depth, nodes, nps, FEN, logs) —
+     the soul of an analysis tool: numbers align in a mono grid. */
+  --jb-mono: 'SF Mono', 'JetBrains Mono', 'Roboto Mono', ui-monospace,
+    'Cascadia Code', Menlo, Consolas, monospace;
+
+  /* Line color pulled from the theme border token for consistency */
+  --jb-line: rgba(var(--v-border-color), 0.16);
+}
+
+/* ---- App surfaces ------------------------------------------------------- */
+
+/* Restore a slim, styled scrollbar (index.html hides it globally). A workbench
+   benefits from seeing scroll position in long move lists / engine logs. */
+*::-webkit-scrollbar {
+  display: block !important;
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(var(--v-theme-on-surface), 0.18);
+  border-radius: 6px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--v-theme-on-surface), 0.3);
+}
+
+/* ---- Buttons ------------------------------------------------------------ */
+
+/* Flatten Material's pill radius + uppercase shout into calm, precise controls.
+   Filled buttons keep the accent; the app already assigns colors per button. */
+.v-btn {
+  border-radius: var(--jb-radius-sm);
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-weight: 500;
+}
+
+.v-btn--size-small {
+  font-weight: 500;
+}
+
+/* Elevated/flat buttons: replace stacked Material shadow with a hairline so the
+   toolbar and sidebar read as one flat instrument surface. */
+.v-btn.v-btn--variant-elevated,
+.v-btn.v-btn--variant-flat {
+  box-shadow: none;
+}
+.v-btn.v-btn--variant-elevated:hover,
+.v-btn.v-btn--variant-flat:hover {
+  box-shadow: var(--jb-elevation);
+}
+
+/* ---- Cards / panels ----------------------------------------------------- */
+
+.v-card {
+  border-radius: var(--jb-radius);
+  box-shadow: var(--jb-elevation);
+}
+
+/* Text fields / selects: quieter, squared to the panel grid */
+.v-field {
+  border-radius: var(--jb-radius-sm) !important;
+}
+
+/* ---- Chips -------------------------------------------------------------- */
+
+.v-chip {
+  border-radius: var(--jb-radius-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ---- Data / monospace --------------------------------------------------- */
+
+/* Engine output, move list, logs, and the score readout are data: set them in
+   the mono grid. These class names come from AnalysisSidebar. */
+.analysis-output,
+.move-list,
+.engine-log,
+.score-badge,
+.pool-count {
+  font-family: var(--jb-mono) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Focus visibility --------------------------------------------------- */
+
+/* A quiet cinnabar focus ring, only for keyboard users. */
+.v-btn:focus-visible,
+.v-field:focus-within,
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-accent));
+  outline-offset: 2px;
+}
+
+/* ---- Motion ------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

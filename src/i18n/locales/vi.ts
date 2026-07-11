@@ -328,6 +328,7 @@ prev.prev - Nước đi trước-trước (hỗ trợ lồng nhau vô hạn)`,
     undockPanel: 'Tách panel',
     dockPanel: 'Ghép panel',
     restorePanels: 'Khôi phục bố cục panel',
+    panelsRestored: 'Đã khôi phục bố cục panel mặc định',
     flipBoard: 'Lật bàn cờ',
     flipBoardBack: 'Khôi phục hướng',
     ponderMode: 'Chế độ suy nghĩ nền',
@@ -397,6 +398,8 @@ prev.prev - Nước đi trước-trước (hỗ trợ lồng nhau vô hạn)`,
     confirmDeleteMessage:
       'Bạn có chắc muốn xóa động cơ "{name}" không? Hành động này không thể hoàn tác.',
     promptEngineName: 'Vui lòng nhập tên duy nhất cho động cơ:',
+    promptEnginePath:
+      'Nhập đường dẫn tuyệt đối của tệp động cơ trên máy này (cầu nối cục bộ sẽ khởi chạy nó):',
     promptEngineArgs:
       'Vui lòng nhập tham số dòng lệnh cho động cơ (tùy chọn, để trống nếu không biết):',
     promptHasNnue: 'động cơ này có sử dụng file NNUE không? (y/n):',

@@ -1,6 +1,6 @@
 import { ref, watch } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
 import { useInterfaceSettings } from './useInterfaceSettings'
+import { loadAutosaveString, saveAutosaveString } from '../utils/storage'
 
 // Autosave functionality composable
 export function useAutosave() {
@@ -13,7 +13,7 @@ export function useAutosave() {
   // Load autosave file on startup if autosave is enabled
   const loadAutosaveOnStartup = async (gameState: any) => {
     try {
-      const autosaveContent = await invoke<string>('load_autosave')
+      const autosaveContent = await loadAutosaveString()
       if (autosaveContent && autosaveContent.trim()) {
         // Parse and load the autosave content
         const gameData = JSON.parse(autosaveContent)
@@ -62,7 +62,7 @@ export function useAutosave() {
 
       const autosaveContent = JSON.stringify(gameNotation, null, 2)
 
-      await invoke('save_autosave', { content: autosaveContent })
+      await saveAutosaveString(autosaveContent)
       lastAutosaveTime.value = Date.now()
 
       console.log('Autosave completed successfully')

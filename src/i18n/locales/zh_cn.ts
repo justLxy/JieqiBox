@@ -48,6 +48,7 @@ export default {
   // UCI选项对话框
   uciOptions: {
     title: 'UCI引擎选项',
+    subtitle: '配置当前引擎的运行参数，修改会即时生效并保存。',
     loadingText: '正在加载引擎选项...',
     noEngineLoaded: '当前未加载任何引擎。',
     pleaseLoadEngineFirst: '请先加载引擎以配置其选项。',
@@ -61,6 +62,20 @@ export default {
     confirmClearSettings:
       '确定要清除当前引擎的所有UCI选项配置吗？此操作不可恢复。',
     settingsCleared: '已清除UCI选项配置',
+    // UCI选项友好名称（找不到时回退为引擎原始英文名）
+    optionNames: {
+      'Debug Log File': '调试日志文件',
+      Threads: '线程数',
+      Hash: '哈希表大小',
+      'Clear Hash': '清空哈希表',
+      MultiPV: '多主变数量',
+      NumaPolicy: 'NUMA 绑定策略',
+      Ponder: '后台思考',
+      'Move Overhead': '走子时间余量',
+      nodestime: '以节点数计时',
+      UCI_ShowWDL: '显示胜和负概率',
+      EvalFile: '评估网络文件',
+    },
     // UCI选项说明
     optionDescriptions: {
       'Debug Log File': '输出的引擎与界面通信的调试文件。',
@@ -87,7 +102,12 @@ export default {
   // 复盘分析对话框
   reviewDialog: {
     title: '复盘分析',
+    subtitle: '让引擎逐步复盘整局，为每一步标注好坏。',
+    description:
+      '引擎会对每一步的走子前后各分析一次，并据此标注（!!、!、?、?? 等）。棋局越长、每步用时越大，复盘耗时越久。',
     movetime: '每步用时 (毫秒)',
+    movetimeHint: '每步分析的时长。数值越大评估越准，但整局复盘越慢。',
+    analyzing: '正在复盘…',
     progress: '进度: {current}/{total}',
   },
 
@@ -107,6 +127,7 @@ export default {
   // 时间对话框
   timeDialog: {
     title: '引擎分析参数设置',
+    subtitle: '设置引擎每步分析的停止条件——先选择模式，再填写对应数值。',
     movetime: '步时 (毫秒)',
     maxThinkTime: '最大思考时间 (毫秒)',
     maxDepth: '最大深度',
@@ -117,12 +138,21 @@ export default {
     clearSettings: '清除配置',
     confirmClearSettings: '确定要清除所有分析参数配置吗？此操作不可恢复。',
     settingsCleared: '已清除分析参数配置',
+    rangeHint: '取值范围：{min} – {max}',
     analysisModes: {
       movetime: '按步时分析',
       maxThinkTime: '按最大思考时间分析',
       depth: '按深度分析',
       nodes: '按节点数分析',
       advanced: '高级编程模式',
+    },
+    modeDescriptions: {
+      movetime: '每一步都固定思考这么久，然后立即给出着法。最简单常用，适合日常分析。',
+      maxThinkTime:
+        '为每步设定思考时间上限。引擎可能提前结束，但绝不会超过该时间。',
+      depth: '引擎搜索到指定深度后停止，不限制时间。深度越大越强，但耗时不定。',
+      nodes: '引擎计算指定数量的局面（节点）后停止。用于精确控制计算量或做基准测试。',
+      advanced: '用脚本按上一步的分数、深度、耗时等动态决定本步思考时间，适合高级用户。',
     },
     advancedHint1: '支持简单编程：赋值、算术、位运算、if条件',
     advancedHint2: '可用变量：movetime, depth, nodes, maxThinkTime, prev',
@@ -161,6 +191,7 @@ prev.prev - 上上步（支持无限嵌套）`,
   // 局面编辑对话框
   positionEditor: {
     title: '局面编辑',
+    subtitle: '摆放棋子、变换棋盘或从图片识别局面，校验通过后应用到对局。',
     flipBoard: '🔄 上下翻转',
     mirrorLeftRight: '↔️ 左右对称',
     switchSide: '⚡ 切换先手',
@@ -198,6 +229,8 @@ prev.prev - 上上步（支持无限嵌套）`,
     },
     showBoundingBoxes: '显示边界框',
     preserveDarkPools: '保留暗子池与吃暗子池',
+    preserveDarkPoolsHint:
+      '开启后，编辑局面时保留当前尚未翻开的暗子与已被吃掉的暗子统计；关闭则按棋盘上的棋子重新计算暗子池。不确定时保持开启即可。',
     validationStatus: {
       normal: '正常',
       error: '错误: 暗子数量不匹配',
@@ -246,9 +279,13 @@ prev.prev - 上上步（支持无限嵌套）`,
   // 棋谱JSON对话框
   notationTextDialog: {
     title: '查看 / 输入棋谱（JSON）',
+    subtitle: '以JSON文本查看当前棋谱，或粘贴他人的JSON棋谱后载入。',
     placeholder:
       '此处会显示当前对局的JSON棋谱。你可以复制分享；或将收到的JSON棋谱粘贴到此处，点击“应用”载入棋谱。',
+    hint: '内容为JSON格式。“应用”会用此处的棋谱替换当前对局，请确保格式正确。',
     copy: '复制JSON',
+    copied: '已复制到剪贴板',
+    copyFailed: '复制失败',
     apply: '应用',
   },
 
@@ -256,6 +293,8 @@ prev.prev - 上上步（支持无限嵌套）`,
   flipPrompt: {
     title: '翻子提示',
     message: '请选择要翻开的棋子',
+    captureTitle: '指认吃掉的暗子',
+    captureMessage: '请选择你吃掉的对方暗子是什么',
     confirm: '确认',
     cancel: '取消',
   },
@@ -323,6 +362,7 @@ prev.prev - 上上步（支持无限嵌套）`,
     undockPanel: '取消停靠面板',
     dockPanel: '停靠面板',
     restorePanels: '恢复面板布局',
+    panelsRestored: '已恢复默认面板布局',
     flipBoard: '翻转棋盘',
     flipBoardBack: '恢复方向',
     ponderMode: '后台思考',
@@ -391,6 +431,8 @@ prev.prev - 上上步（支持无限嵌套）`,
     confirmDeleteTitle: '确认删除',
     confirmDeleteMessage: '您确定要删除引擎“{name}”吗？此操作无法撤销。',
     promptEngineName: '请输入引擎的唯一名称:',
+    promptEnginePath:
+      '请输入本机引擎程序的绝对路径（由本地桥接服务启动）：',
     promptEngineArgs: '请输入引擎的命令行参数（可选，未知则留空）：',
     promptHasNnue: '此引擎是否使用NNUE文件？(y/n):',
     promptNnueFile: '请选择引擎的NNUE文件：',
@@ -419,6 +461,7 @@ prev.prev - 上上步（支持无限嵌套）`,
   // JAI 选项对话框
   jaiOptions: {
     title: 'JAI比赛选项',
+    subtitle: '配置用于比赛对战的JAI引擎参数，修改会即时生效并保存。',
     loadingText: '正在加载引擎选项...',
     noEngineLoaded: '当前未加载任何比赛引擎。',
     pleaseLoadEngineFirst: '请先加载比赛引擎以配置其选项。',
@@ -574,25 +617,52 @@ prev.prev - 上上步（支持无限嵌套）`,
   // 界面设置
   interfaceSettings: {
     title: '界面设置',
+    subtitle: '调整棋盘显示、分析信息、音效与数据保存方式。',
+    groups: {
+      appearance: '外观',
+      board: '棋盘',
+      analysis: '分析显示',
+      sound: '音效',
+      data: '数据与引擎',
+    },
     showCoordinates: '显示行列坐标',
     parseUciInfo: '解析UCI信息',
     showAnimations: '开启走子动画',
     showPositionChart: '显示局势图',
     showEvaluationBar: '显示局势评估条',
     darkMode: '暗黑模式',
-    autosave: '自动保存棋谱到Autosave.json',
+    autosave: '自动保存棋谱',
     useNewFenFormat: '使用新FEN格式',
-    engineLogLineLimit: '引擎日志行数限制',
-    validationTimeout: '引擎验证超时时间 (毫秒)',
+    engineLogLineLimit: '引擎日志行数上限',
+    validationTimeout: '引擎验证超时 (毫秒)',
     showChineseNotation: '显示中文记谱法',
     showLuckIndex: '显示运气指数',
-    showArrows: '显示箭头',
+    showArrows: '显示分析箭头',
     enableSoundEffects: '启用音效',
     soundVolume: '音效音量',
     pieceStyle: '棋子风格',
     pieceStyles: {
       default: '默认',
       internationalized: '国际化',
+    },
+    descriptions: {
+      darkMode: '在明亮与深色主题之间切换，深色主题更适合长时间分析。',
+      pieceStyle: '选择棋子外观。“国际化”使用字母/符号，便于非中文用户识别。',
+      showAnimations: '走子时显示滑动动画。关闭后棋子会瞬间到位，界面更快。',
+      showCoordinates: '在棋盘边缘显示行号与列号，便于报出坐标。',
+      showArrows:
+        '在棋盘上绘制引擎推荐着法的箭头。关闭后棋盘更简洁，只保留棋子。',
+      showChineseNotation: '着法与棋谱使用中文记谱（如“炮二平五”），否则使用坐标记法。',
+      parseUciInfo: '将引擎原始UCI输出解析为可读的深度、分数与主变，而非显示原始文本。',
+      showEvaluationBar: '在棋盘旁显示一条评估条，直观展示当前红黑双方的优劣。',
+      showPositionChart: '显示整局的评分走势曲线，方便回顾局势变化。',
+      showLuckIndex: '根据揭子结果估算双方运气值，衡量翻开暗子的好坏。',
+      enableSoundEffects: '走子、吃子、将军等操作时播放提示音。',
+      soundVolume: '调整音效的响度。仅在启用音效时生效。',
+      autosave: '每步棋后自动将棋谱保存到 Autosave.json，防止意外丢失。',
+      useNewFenFormat: '使用揭棋专用的新版FEN格式记录暗子信息；旧引擎可能需要关闭。',
+      engineLogLineLimit: '引擎日志保留的最大行数，超出后自动丢弃最旧记录以控制内存占用。',
+      validationTimeout: '加载引擎时等待其响应的最长时间，超时则判定引擎无效。',
     },
   },
 
@@ -695,6 +765,12 @@ prev.prev - 上上步（支持无限嵌套）`,
     showMoves: '显示开局库着法',
     show: '显示',
     preferHighPriority: '优先选择高优先级着法',
+    descriptions: {
+      enableInGame: '对局中当引擎轮到走子时，若开局库中有记录，则直接使用库中着法而不启动引擎搜索。',
+      showMoves: '在棋盘上标记当前局面在开局库里已收录的着法，便于对照。',
+      preferHighPriority:
+        '当一个局面有多个库着法时，优先选择你设定的高优先级着法；关闭后则按胜率等综合权重选择。',
+    },
     totalPositions: '总局面数',
     totalMoves: '总着法数',
     allowedMoves: '允许着法',

@@ -8,6 +8,8 @@ import {
 } from '@/utils/constants'
 import { MATE_SCORE_BASE } from '@/utils/constants'
 import { isAndroidPlatform as checkAndroidPlatform } from '../utils/platform'
+import { isTauri } from '../utils/runtime'
+import { copyText, downloadTextFile } from '../utils/platformIo'
 import { useInterfaceSettings } from './useInterfaceSettings'
 import { useGameSettings } from './useGameSettings'
 import { useHumanVsAiSettings } from './useHumanVsAiSettings'
@@ -116,6 +118,10 @@ export function useChessGame() {
     pieceToMove: Piece
     uciMove: string
     side: 'red' | 'black'
+    // 'flip' = identify the moving side's own revealed piece (default).
+    // 'capture' = identify the opponent dark piece that was just captured; in
+    // free flip mode the capturer learns (and records) what they took.
+    kind?: 'flip' | 'capture'
     callback: (chosenPieceName: string) => void
   } | null>(null)
 
@@ -231,6 +237,17 @@ export function useChessGame() {
       ;[arr[i], arr[j]] = [arr[j], arr[i]]
     }
     return arr
+  }
+
+  // "My side" is whichever side occupies the BOTTOM half of the board as shown
+  // (rows 5-9), regardless of red/black. Flipping the board swaps which side is
+  // on the bottom. Jieqi rule: when I capture an opponent's dark piece I learn
+  // its identity, but when the opponent captures MY dark piece I do not — so we
+  // only prompt the player to identify a captured dark piece when the capturer
+  // is my (bottom) side.
+  const getMySide = (): 'red' | 'black' => {
+    // Bottom half (row >= 5) is red when not flipped, black when flipped.
+    return isBoardFlipped.value ? 'black' : 'red'
   }
   const getPieceNameFromChar = (char: string): string => {
     const isRed = char === char.toUpperCase()
@@ -353,12 +370,13 @@ export function useChessGame() {
     }
   }
 
-  // Helper function to replace hidden piece pool in FEN for human vs AI mode
+  // Replace the dark-piece pools in an engine-bound FEN with the engine's
+  // limited-knowledge view. Used for both Human-vs-AI mode and normal analysis:
+  // calculateDualPools() conceals the opponent-of-analyzing-side captures in
+  // both cases, so the substitution is always correct. This is only ever called
+  // on FENs headed to the engine (via generateFenForEngine), never on the god-
+  // view FEN used for display or save files.
   const replaceHiddenPoolInFen = (fen: string): string => {
-    if (!isHumanVsAiMode.value) {
-      return fen
-    }
-
     const fenFormat = detectFenFormat(fen)
     const fenParts = fen.split(' ')
 
@@ -420,15 +438,16 @@ export function useChessGame() {
     let fenToProcess: string
 
     if (baseFen) {
-      // In human vs AI mode, replace hidden pool first, then convert format
+      // Substitute the engine's limited-knowledge pools into the given FEN.
       fenToProcess = replaceHiddenPoolInFen(baseFen)
     } else {
-      // In human vs AI mode, generate FEN with limited knowledge
       if (isHumanVsAiMode.value) {
         fenToProcess = generateLimitedKnowledgeFen()
       } else {
-        // Generate current position FEN in the target format
-        fenToProcess = generateFen()
+        // Normal analysis: start from the god-view FEN, then substitute the
+        // engine's limited-knowledge pools so dark pieces captured by the
+        // opponent of the side to move stay hidden from the engine.
+        fenToProcess = replaceHiddenPoolInFen(generateFen())
       }
     }
 
@@ -541,12 +560,34 @@ export function useChessGame() {
     // Engine view captured pool: starts same as god view, but hide human captures
     const engineViewCapturedPool = { ...godViewCapturedPool }
 
-    // In human vs AI mode, hide human captures from engine
-    if (isHumanVsAiMode.value && history.value && currentMoveIndex.value > 0) {
-      const humanSide = aiSide.value === 'red' ? 'black' : 'red'
+    // Conceal one side's dark-piece captures from the engine.
+    //
+    // Jieqi rule: when you capture an opponent's dark piece it is revealed to
+    // YOU only — the opponent never learns what they lost. So the engine, which
+    // analyzes from MY perspective, must not be told which of my dark pieces the
+    // opponent captured; from my/the engine's view those might still be sitting
+    // in the dark pool.
+    //
+    // - Human-vs-AI mode: the engine plays the AI side, so we conceal the
+    //   HUMAN's captures (the opponent of the engine).
+    // - Normal analysis mode: the engine analyzes from MY (bottom-half) side, so
+    //   we conceal the OPPONENT's (top-half) captures of my dark pieces.
+    //
+    // `concealFromSide` is "the side whose captured dark pieces are hidden from
+    // the engine" = the opponent of the side the engine reasons for.
+    const concealFromSide: 'red' | 'black' = isHumanVsAiMode.value
+      ? aiSide.value === 'red'
+        ? 'black'
+        : 'red'
+      : getMySide() === 'red'
+        ? 'black'
+        : 'red'
 
-      // Filter captured pool: engine can only see pieces captured by itself, not by human
-      // Human side pieces are uppercase (red) or lowercase (black), we need to hide human's captures
+    if (history.value && currentMoveIndex.value > 0) {
+      const humanSide = concealFromSide
+
+      // Filter captured pool: the engine can only see pieces captured by the
+      // side it reasons for, not the pieces captured by the concealed side.
       const humanCapturedChars = Object.keys(engineViewCapturedPool).filter(
         char => {
           const isUpperCase = char === char.toUpperCase()
@@ -555,7 +596,7 @@ export function useChessGame() {
         }
       )
 
-      // Remove human's captured pieces from engine view
+      // Remove the concealed side's captured pieces from engine view
       humanCapturedChars.forEach(char => {
         delete engineViewCapturedPool[char]
       })
@@ -1645,6 +1686,73 @@ export function useChessGame() {
   }
 
   /**
+   * Record that a captured opponent dark piece of type `char` was taken: move it
+   * from the opponent's dark pool into the captured-dark pool (god view). The
+   * engine view (calculateDualPools) then conceals it from the opponent's side.
+   */
+  const applyCapturedDarkPiece = (char: string) => {
+    if ((unrevealedPieceCounts.value[char] || 0) > 0) {
+      unrevealedPieceCounts.value[char]--
+    }
+    capturedUnrevealedPieceCounts.value[char] =
+      (capturedUnrevealedPieceCounts.value[char] || 0) + 1
+  }
+
+  /**
+   * Resolve the identity of a captured opponent dark piece, then run `finalize`
+   * with the captured piece's char (or null if none / not applicable).
+   *
+   * - Free flip mode: the capturer learns what they took, so prompt them to
+   *   identify it (a second dialog after any own-flip dialog). If only one
+   *   candidate type remains in the opponent pool, resolve it directly.
+   * - Other modes: `capturedHiddenChar` was already decided by the caller.
+   *
+   * `targetSide` is the side of the captured piece (the opponent).
+   */
+  const resolveCapturedDarkPiece = (
+    piece: Piece,
+    uciMove: string,
+    targetSide: 'red' | 'black',
+    finalize: (capturedHiddenChar: string | null) => void
+  ) => {
+    const candidates = Object.entries(unrevealedPieceCounts.value)
+      .filter(
+        ([char, count]) =>
+          count > 0 && getPieceNameFromChar(char).startsWith(targetSide)
+      )
+      .map(([char]) => char)
+
+    if (candidates.length === 0) {
+      // Opponent pool empty — nothing to identify.
+      finalize(null)
+      return
+    }
+
+    const uniqueChars = [...new Set(candidates)]
+    if (uniqueChars.length === 1) {
+      // Only one possible identity — resolve without a dialog.
+      const char = uniqueChars[0]
+      applyCapturedDarkPiece(char)
+      finalize(char)
+      return
+    }
+
+    // Multiple possibilities: ask the capturer to identify the captured piece.
+    pendingFlip.value = {
+      pieceToMove: piece,
+      uciMove,
+      side: targetSide,
+      kind: 'capture',
+      callback: chosenName => {
+        const char = getCharFromPieceName(chosenName)
+        applyCapturedDarkPiece(char)
+        pendingFlip.value = null
+        finalize(char)
+      },
+    }
+  }
+
+  /**
    * Handle board click event.
    * If a move is attempted in a historical position, return an object indicating confirmation is required.
    * Otherwise, perform the move as usual.
@@ -2135,27 +2243,40 @@ export function useChessGame() {
     }
 
     let capturedHiddenChar: string | null = null
+    // In free flip mode, capturing an opponent dark piece is resolved later by
+    // asking the capturer to identify it. Remember the opponent's side here.
+    let capturedDarkTargetSide: 'red' | 'black' | null = null
     if (targetPiece) {
-      // In free flip mode, capturing opponent's hidden piece should not affect their unrevealed pool
-      // Only in random flip mode and not in match mode, we randomly remove a piece from opponent's pool
-      if (!targetPiece.isKnown && flipMode.value === 'random' && !isMatchMode) {
+      if (!targetPiece.isKnown && !isMatchMode) {
         const targetSide = getPieceSide(targetPiece)
-        const opponentPoolChars = Object.keys(
-          unrevealedPieceCounts.value
-        ).filter(
-          char =>
-            unrevealedPieceCounts.value[char] > 0 &&
-            getPieceNameFromChar(char).startsWith(targetSide)
-        )
+        if (flipMode.value === 'random') {
+          // Random mode: pick the captured dark piece randomly from the pool.
+          const opponentPoolChars = Object.keys(
+            unrevealedPieceCounts.value
+          ).filter(
+            char =>
+              unrevealedPieceCounts.value[char] > 0 &&
+              getPieceNameFromChar(char).startsWith(targetSide)
+          )
 
-        if (opponentPoolChars.length > 0) {
-          const charToRemove = shuffle(opponentPoolChars)[0]
-          unrevealedPieceCounts.value[charToRemove]--
-          // Add the captured piece to the captured unrevealed pool
-          capturedUnrevealedPieceCounts.value[charToRemove] =
-            (capturedUnrevealedPieceCounts.value[charToRemove] || 0) + 1
-          // Remember which hidden piece was virtually captured for UCI annotation
-          capturedHiddenChar = charToRemove
+          if (opponentPoolChars.length > 0) {
+            const charToRemove = shuffle(opponentPoolChars)[0]
+            unrevealedPieceCounts.value[charToRemove]--
+            // Add the captured piece to the captured unrevealed pool
+            capturedUnrevealedPieceCounts.value[charToRemove] =
+              (capturedUnrevealedPieceCounts.value[charToRemove] || 0) + 1
+            // Remember which hidden piece was virtually captured for UCI annotation
+            capturedHiddenChar = charToRemove
+          }
+        } else {
+          // Free mode: only I (the bottom/my side) learn what I captured. If my
+          // side is the one doing the capturing, defer to let me identify the
+          // piece. If the opponent (top side) captured my dark piece, I do NOT
+          // know its identity, so leave it unidentified.
+          const moverSide = getPieceSide(piece)
+          if (moverSide === getMySide()) {
+            capturedDarkTargetSide = targetSide
+          }
         }
       }
       pieces.value = pieces.value.filter(p => p.id !== targetPiece.id)
@@ -2173,6 +2294,32 @@ export function useChessGame() {
     if (wasDarkPiece && !skipFlipLogic && !isMatchMode) {
       console.log(`[DEBUG] movePiece: Dark piece move detected.`)
       if (flipMode.value === 'free') {
+        // Reveal the moving (own) dark piece, then — if a dark opponent piece
+        // was captured — identify that captured piece before finalizing.
+        const revealOwnThenResolveCapture = (ownChosenName: string) => {
+          if (capturedDarkTargetSide) {
+            resolveCapturedDarkPiece(
+              piece,
+              uciMove,
+              capturedDarkTargetSide,
+              capturedChar =>
+                completeFlipAfterMove(
+                  piece,
+                  uciMove,
+                  ownChosenName,
+                  capturedChar
+                )
+            )
+          } else {
+            completeFlipAfterMove(
+              piece,
+              uciMove,
+              ownChosenName,
+              capturedHiddenChar
+            )
+          }
+        }
+
         // In free flip mode, check if there's only one type of piece that can be flipped
         const availablePieceTypes = Object.entries(unrevealedPieceCounts.value)
           .filter(([, count]) => count > 0)
@@ -2193,7 +2340,7 @@ export function useChessGame() {
           )
           // Get any piece of that type (we'll just take the first one)
           const chosenName = uniquePieceTypes[0]
-          completeFlipAfterMove(piece, uciMove, chosenName, capturedHiddenChar)
+          revealOwnThenResolveCapture(chosenName)
         } else {
           // Multiple types available, show flip dialog
           console.log(
@@ -2216,13 +2363,8 @@ export function useChessGame() {
             pieceToMove: piece,
             uciMove: uciMove,
             side: pieceSide,
-            callback: chosenName =>
-              completeFlipAfterMove(
-                piece,
-                uciMove,
-                chosenName,
-                capturedHiddenChar
-              ),
+            kind: 'flip',
+            callback: revealOwnThenResolveCapture,
           }
         }
       } else {
@@ -2247,14 +2389,28 @@ export function useChessGame() {
       console.log(`[DEBUG] movePiece: Regular move detected. Finalizing.`)
       // Set highlight
       lastMovePositions.value = highlightMove
-      console.log(
-        `[DEBUG] movePiece: About to call recordAndFinalize with move: ${uciMove}`
-      )
-      // If captured a hidden piece in random mode, append the captured piece letter
-      const finalUci = capturedHiddenChar
-        ? `${uciMove}${capturedHiddenChar}`
-        : uciMove
-      recordAndFinalize('move', finalUci)
+
+      const finalizeRegular = (captured: string | null) => {
+        console.log(
+          `[DEBUG] movePiece: About to call recordAndFinalize with move: ${uciMove}`
+        )
+        // Append the captured hidden piece letter (if any) to the UCI move.
+        const finalUci = captured ? `${uciMove}${captured}` : uciMove
+        recordAndFinalize('move', finalUci)
+      }
+
+      // A revealed piece that captured an opponent dark piece in free mode:
+      // let the capturer identify the captured piece before finalizing.
+      if (capturedDarkTargetSide) {
+        resolveCapturedDarkPiece(
+          piece,
+          uciMove,
+          capturedDarkTargetSide,
+          finalizeRegular
+        )
+      } else {
+        finalizeRegular(capturedHiddenChar)
+      }
     }
 
     // Ensure the moving piece stays on top during the CSS transition
@@ -2533,8 +2689,7 @@ export function useChessGame() {
     try {
       // Use the same FEN generation logic as the engine to ensure consistency
       const fen = generateFen()
-      const { invoke } = await import('@tauri-apps/api/core')
-      await invoke('copy_to_clipboard', { text: fen })
+      await copyText(fen)
       copySuccessVisible.value = true
       setTimeout(() => {
         copySuccessVisible.value = false
@@ -2700,6 +2855,13 @@ export function useChessGame() {
     try {
       const notation = generateGameNotation()
       const content = JSON.stringify(notation, null, 2)
+
+      // Web build: trigger a browser download, no native dialog available.
+      if (!isTauri()) {
+        const filename = `jieqi_game_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`
+        downloadTextFile(content, filename)
+        return
+      }
 
       // Check if running on Android platform using centralized detection logic
       const isAndroidPlatform = checkAndroidPlatform()

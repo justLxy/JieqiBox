@@ -6,11 +6,14 @@
     :fullscreen="$vuetify.display.smAndDown"
   >
     <v-card>
-      <v-card-title class="pb-2">
-        <span class="text-h6">{{ $t('positionEditor.title') }}</span>
-      </v-card-title>
+      <DialogHeader
+        :title="$t('positionEditor.title')"
+        :subtitle="$t('positionEditor.subtitle')"
+        icon="mdi-pencil-box"
+        @close="cancelEdit"
+      />
 
-      <v-card-text class="pt-0">
+      <v-card-text class="pt-4">
         <v-container class="pa-0 position-editor-container">
           <!-- Action Buttons -->
           <v-row class="mb-2">
@@ -84,14 +87,30 @@
                       : $t('positionEditor.blackToMove')
                   }}
                 </v-chip>
-                <v-switch
-                  v-model="preserveDarkPools"
-                  :label="$t('positionEditor.preserveDarkPools')"
-                  color="primary"
-                  density="compact"
-                  hide-details
-                  class="preserve-switch"
-                ></v-switch>
+                <div class="preserve-wrap">
+                  <v-switch
+                    v-model="preserveDarkPools"
+                    :label="$t('positionEditor.preserveDarkPools')"
+                    color="primary"
+                    density="compact"
+                    hide-details
+                    class="preserve-switch"
+                  ></v-switch>
+                  <v-tooltip
+                    :text="$t('positionEditor.preserveDarkPoolsHint')"
+                    location="bottom"
+                    max-width="300"
+                  >
+                    <template #activator="{ props: tipProps }">
+                      <v-icon
+                        v-bind="tipProps"
+                        size="small"
+                        class="preserve-info"
+                        >mdi-information-outline</v-icon
+                      >
+                    </template>
+                  </v-tooltip>
+                </div>
               </div>
             </v-col>
           </v-row>
@@ -362,13 +381,14 @@
         </v-container>
       </v-card-text>
 
-      <v-card-actions class="pa-3">
+      <v-card-actions class="editor-actions pa-3">
         <v-spacer></v-spacer>
-        <v-btn color="error" variant="text" size="small" @click="cancelEdit">
+        <v-btn variant="text" size="small" @click="cancelEdit">
           {{ $t('positionEditor.cancel') }}
         </v-btn>
         <v-btn
           color="primary"
+          variant="flat"
           size="small"
           @click="applyChanges"
           :disabled="validationStatus.type !== 'success'"
@@ -383,6 +403,7 @@
 <script setup lang="ts">
   import { ref, computed, inject, watch, nextTick } from 'vue'
   import { useI18n } from 'vue-i18n'
+  import DialogHeader from './DialogHeader.vue'
   import MersenneTwister from 'mersenne-twister'
   import type { Piece } from '@/composables/useChessGame'
   import { START_FEN, INITIAL_PIECE_COUNTS, FEN_MAP } from '@/utils/constants'
@@ -1546,7 +1567,7 @@
 
     &.selected {
       transform: translate(-50%, -50%) scale(1.2);
-      filter: drop-shadow(0 0 8px rgba(33, 150, 243, 0.8));
+      filter: drop-shadow(0 0 8px rgba(var(--v-theme-accent), 0.8));
       z-index: 40;
     }
   }
@@ -1659,8 +1680,8 @@
     transition: all 0.2s ease;
 
     &:hover {
-      background-color: rgba(var(--v-theme-primary), 0.1);
-      border-color: #1976d2;
+      background-color: rgba(var(--v-theme-accent), 0.1);
+      border-color: rgb(var(--v-theme-accent));
       transform: scale(1.05);
     }
 
@@ -1741,6 +1762,25 @@
 
   .side-to-move {
     margin-top: 0 !important;
+  }
+
+  .preserve-wrap {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .preserve-info {
+    color: rgba(var(--v-theme-on-surface), 0.5);
+    cursor: help;
+
+    &:hover {
+      color: rgb(var(--v-theme-accent));
+    }
+  }
+
+  .editor-actions {
+    border-top: 1px solid var(--jb-line, rgba(var(--v-border-color), 0.16));
   }
 
   // Hide desktop-only elements on mobile

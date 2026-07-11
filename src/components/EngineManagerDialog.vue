@@ -27,8 +27,11 @@
       </v-card-text>
 
       <v-card-actions>
+        <v-btn v-if="isWebPlatform" color="blue-darken-1" @click="addEngineWeb">{{
+          $t('engineManager.addEngine')
+        }}</v-btn>
         <v-btn
-          v-if="isAndroidPlatform"
+          v-else-if="isAndroidPlatform"
           color="blue-darken-1"
           @click="addEngineAndroid"
           >{{ $t('engineManager.addEngineAndroid') }}</v-btn
@@ -222,10 +225,19 @@
     useConfigManager,
     type ManagedEngine,
   } from '../composables/useConfigManager'
-  import { open } from '@tauri-apps/plugin-dialog'
-  import { invoke } from '@tauri-apps/api/core'
   import type { UnlistenFn } from '@tauri-apps/api/event'
   import { isAndroidPlatform as checkAndroidPlatform } from '../utils/platform'
+  import { isTauri } from '../utils/runtime'
+
+  // Lazy Tauri accessors so the web bundle never imports native-only modules.
+  const tauriInvoke = async (cmd: string, args?: Record<string, unknown>) => {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return invoke(cmd, args)
+  }
+  const tauriOpenDialog = async (options: Record<string, unknown>) => {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    return open(options as any)
+  }
 
   // Props and Emits
   const props = defineProps<{ modelValue: boolean }>()
@@ -291,6 +303,7 @@
   })
 
   const isAndroidPlatform = computed(() => checkAndroidPlatform())
+  const isWebPlatform = computed(() => !isTauri())
 
   // Table headers
   const headers = computed(() => [
@@ -336,8 +349,25 @@
     await configManager.saveEngines(engines.value)
   }
 
+  // Web build: the browser cannot open a native file dialog, so prompt for the
+  // absolute path of the engine binary on the machine running the local bridge
+  // (see bridge/server.mjs). The bridge launches whatever path is entered here.
+  const addEngineWeb = () => {
+    const enginePath = prompt(t('engineManager.promptEnginePath'))
+    if (!enginePath) return
+    const newId = `engine_${Date.now()}`
+    editedEngine.value = {
+      id: newId,
+      name: `Engine ${engines.value.length + 1}`,
+      path: enginePath.trim(),
+      args: '',
+    }
+    isEditing.value = false
+    editDialog.value = true
+  }
+
   const addEngineDesktop = async () => {
-    const selectedPath = await open({
+    const selectedPath = await tauriOpenDialog({
       multiple: false,
       title: 'Select UCI Engine',
     })
@@ -398,7 +428,7 @@
             hasNnue: engineData.hasNnue,
           })
 
-          invoke('handle_saf_file_result', {
+          tauriInvoke('handle_saf_file_result', {
             tempFilePath: result,
             filename: filename,
             name: engineData.name,
@@ -420,7 +450,7 @@
       window.addEventListener('saf-file-result', handleSafResult)
     } else {
       // Fallback to the Tauri invoke approach
-      invoke('request_saf_file_selection', { name, args, hasNnue }).catch(
+      tauriInvoke('request_saf_file_selection', { name, args, hasNnue }).catch(
         err => {
           console.error('SAF request failed:', err)
           alert(t('errors.failedToOpenFileSelector'))
@@ -600,7 +630,7 @@
       configManager.clearLastSelectedEngineId()
     }
 
-    if (isAndroidPlatform.value) {
+    if (isTauri() && isAndroidPlatform.value) {
       const { listen } = await import('@tauri-apps/api/event')
       unlistenAndroidAdd = listen('android-engine-added', event => {
         const payload = event.payload as ManagedEngine
@@ -645,7 +675,7 @@
                   engineInstanceId: payload.engine_instance_id,
                 })
 
-                invoke('handle_nnue_file_result', {
+                tauriInvoke('handle_nnue_file_result', {
                   tempFilePath: result,
                   filename: filename,
                   engineName: payload.engine_name,

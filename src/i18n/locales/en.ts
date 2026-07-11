@@ -48,6 +48,8 @@ export default {
   // UCI options dialog
   uciOptions: {
     title: 'UCI Engine Options',
+    subtitle:
+      'Configure the current engine. Changes apply and are saved immediately.',
     loadingText: 'Loading engine options...',
     noEngineLoaded: 'No engine is currently loaded.',
     pleaseLoadEngineFirst:
@@ -62,6 +64,20 @@ export default {
     confirmClearSettings:
       'Are you sure you want to clear all UCI option configurations for the current engine? This action cannot be undone.',
     settingsCleared: 'UCI option configurations cleared',
+    // Friendly option names (falls back to the raw engine key when absent)
+    optionNames: {
+      'Debug Log File': 'Debug log file',
+      Threads: 'Threads',
+      Hash: 'Hash size',
+      'Clear Hash': 'Clear hash',
+      MultiPV: 'Lines shown (MultiPV)',
+      NumaPolicy: 'NUMA policy',
+      Ponder: 'Ponder (think on opponent\'s time)',
+      'Move Overhead': 'Move overhead',
+      nodestime: 'Count time as nodes',
+      UCI_ShowWDL: 'Show win/draw/loss',
+      EvalFile: 'Evaluation file',
+    },
     // UCI option descriptions
     optionDescriptions: {
       'Debug Log File':
@@ -89,7 +105,13 @@ export default {
   // Review analysis dialog
   reviewDialog: {
     title: 'Review Analysis',
+    subtitle: 'Let the engine review the whole game and mark each move.',
+    description:
+      'The engine analyzes the position before and after every move, then annotates each one (!!, !, ?, ??, etc.). Longer games and higher per-move times take proportionally longer.',
     movetime: 'Per-move time (ms)',
+    movetimeHint:
+      'How long to analyze each move. Higher is more accurate but slower over the whole game.',
+    analyzing: 'Reviewing…',
     progress: 'Progress: {current}/{total}',
   },
 
@@ -108,24 +130,39 @@ export default {
 
   // Time dialog
   timeDialog: {
-    title: 'Engine Analysis Parameters Settings',
-    movetime: 'Move Time (ms)',
-    maxThinkTime: 'Max Think Time (ms)',
-    maxDepth: 'Max Depth',
-    maxNodes: 'Max Nodes',
-    analysisMode: 'Analysis Mode',
-    advanced: 'Advanced Script',
-    resetToDefaults: 'Reset to Defaults',
-    clearSettings: 'Clear Settings',
+    title: 'Engine Analysis Parameters',
+    subtitle:
+      'Set when the engine stops thinking each move — pick a mode, then set its value.',
+    movetime: 'Move time (ms)',
+    maxThinkTime: 'Max think time (ms)',
+    maxDepth: 'Max depth',
+    maxNodes: 'Max nodes',
+    analysisMode: 'Analysis mode',
+    advanced: 'Advanced script',
+    resetToDefaults: 'Reset to defaults',
+    clearSettings: 'Clear settings',
     confirmClearSettings:
       'Are you sure you want to clear all analysis parameter configurations? This action cannot be undone.',
     settingsCleared: 'Analysis parameter configurations cleared',
+    rangeHint: 'Range: {min} – {max}',
     analysisModes: {
-      movetime: 'Analyze by Move Time',
-      maxThinkTime: 'Analyze by Max Think Time',
-      depth: 'Analyze by Depth',
-      nodes: 'Analyze by Nodes',
-      advanced: 'Advanced Programming Mode',
+      movetime: 'Analyze by move time',
+      maxThinkTime: 'Analyze by max think time',
+      depth: 'Analyze by depth',
+      nodes: 'Analyze by nodes',
+      advanced: 'Advanced programming mode',
+    },
+    modeDescriptions: {
+      movetime:
+        'Think for a fixed amount of time each move, then play. The simplest and most common choice for everyday analysis.',
+      maxThinkTime:
+        'Set an upper limit on time per move. The engine may finish early but will never exceed this.',
+      depth:
+        'Stop once the engine has searched to a set depth, with no time limit. Deeper is stronger but takes an unpredictable amount of time.',
+      nodes:
+        'Stop after the engine has examined a set number of positions (nodes). Useful for precise, reproducible workloads or benchmarking.',
+      advanced:
+        'Use a script to decide think time dynamically from the previous move\'s score, depth, and time used. For advanced users.',
     },
     advancedHint1:
       'Supports simple programming: assignment, arithmetic, bitwise operations, if conditions',
@@ -166,6 +203,8 @@ prev.prev - Previous-previous move (supports infinite nesting)`,
   // Position editor dialog
   positionEditor: {
     title: 'Position Editor',
+    subtitle:
+      'Place pieces, transform the board, or recognize a position from an image, then apply it once it validates.',
     flipBoard: '🔄 Flip Board',
     mirrorLeftRight: '↔️ Mirror Left-Right',
     switchSide: '⚡ Switch Side',
@@ -203,6 +242,8 @@ prev.prev - Previous-previous move (supports infinite nesting)`,
     },
     showBoundingBoxes: 'Show bounding boxes',
     preserveDarkPools: 'Preserve dark piece pools',
+    preserveDarkPoolsHint:
+      'When on, editing keeps the current pools of unrevealed and captured dark pieces; when off, the pools are recomputed from the pieces on the board. Leave it on if unsure.',
     validationStatus: {
       normal: 'Normal',
       error: 'Error: Dark piece count mismatch',
@@ -251,9 +292,13 @@ prev.prev - Previous-previous move (supports infinite nesting)`,
   // Notation JSON dialog
   notationTextDialog: {
     title: 'View / Paste Notation (JSON)',
+    subtitle: 'View the current game as JSON text, or paste one to load it.',
     placeholder:
       'JSON of current game notation will appear here. You can copy it, or paste a notation JSON and click Apply to load it.',
+    hint: 'Content is JSON. "Apply" replaces the current game with this notation — make sure the format is valid.',
     copy: 'Copy JSON',
+    copied: 'Copied to clipboard',
+    copyFailed: 'Copy failed',
     apply: 'Apply',
   },
 
@@ -261,6 +306,8 @@ prev.prev - Previous-previous move (supports infinite nesting)`,
   flipPrompt: {
     title: 'Flip Piece Prompt',
     message: 'Please select the piece to flip',
+    captureTitle: 'Identify Captured Piece',
+    captureMessage: 'Select the opponent dark piece you captured',
     confirm: 'Confirm',
     cancel: 'Cancel',
   },
@@ -328,6 +375,7 @@ prev.prev - Previous-previous move (supports infinite nesting)`,
     undockPanel: 'Undock Panel',
     dockPanel: 'Dock Panel',
     restorePanels: 'Restore Panels Layout',
+    panelsRestored: 'Panel layout restored to default',
     flipBoard: 'Flip Board',
     flipBoardBack: 'Restore',
     ponderMode: 'Ponder Mode',
@@ -397,6 +445,8 @@ prev.prev - Previous-previous move (supports infinite nesting)`,
     confirmDeleteMessage:
       'Are you sure you want to delete the engine "{name}"? This action cannot be undone.',
     promptEngineName: 'Please enter a unique name for the engine:',
+    promptEnginePath:
+      'Enter the absolute path of the engine binary on this machine (the local bridge will launch it):',
     promptEngineArgs:
       'Please enter command-line arguments for the engine (optional, leave empty if unknown):',
     promptHasNnue: 'Does this engine use NNUE files? (y/n):',
@@ -426,6 +476,8 @@ prev.prev - Previous-previous move (supports infinite nesting)`,
   // JAI options dialog
   jaiOptions: {
     title: 'JAI Match Options',
+    subtitle:
+      'Configure the JAI engine used for matches. Changes apply and are saved immediately.',
     loadingText: 'Loading engine options...',
     noEngineLoaded: 'No match engine is currently loaded.',
     pleaseLoadEngineFirst:
@@ -590,25 +642,67 @@ prev.prev - Previous-previous move (supports infinite nesting)`,
   // Interface settings dialog
   interfaceSettings: {
     title: 'Interface Settings',
+    subtitle:
+      'Adjust how the board, analysis, sound, and saved data behave.',
+    groups: {
+      appearance: 'Appearance',
+      board: 'Board',
+      analysis: 'Analysis display',
+      sound: 'Sound',
+      data: 'Data & engine',
+    },
     showCoordinates: 'Show rank and file numbers',
-    parseUciInfo: 'Parse UCI Info',
+    parseUciInfo: 'Parse UCI info',
     showAnimations: 'Enable move animations',
     showPositionChart: 'Show evaluation chart',
     showEvaluationBar: 'Show evaluation bar',
-    darkMode: 'Dark Mode',
-    autosave: 'Auto-save game to Autosave.json',
-    useNewFenFormat: 'Use New FEN Format',
-    engineLogLineLimit: 'Engine Log Line Limit',
-    validationTimeout: 'Engine Validation Timeout (ms)',
-    showChineseNotation: 'Show Chinese Notation',
-    showLuckIndex: 'Show Luck Index',
-    showArrows: 'Show Arrows',
-    enableSoundEffects: 'Enable Sound Effects',
-    soundVolume: 'Sound Volume',
-    pieceStyle: 'Piece Style',
+    darkMode: 'Dark mode',
+    autosave: 'Auto-save game',
+    useNewFenFormat: 'Use new FEN format',
+    engineLogLineLimit: 'Engine log line limit',
+    validationTimeout: 'Engine validation timeout (ms)',
+    showChineseNotation: 'Show Chinese notation',
+    showLuckIndex: 'Show luck index',
+    showArrows: 'Show analysis arrows',
+    enableSoundEffects: 'Enable sound effects',
+    soundVolume: 'Sound volume',
+    pieceStyle: 'Piece style',
     pieceStyles: {
       default: 'Default',
       internationalized: 'Internationalized',
+    },
+    descriptions: {
+      darkMode:
+        'Switch between light and dark themes. Dark is easier on the eyes for long analysis sessions.',
+      pieceStyle:
+        'Choose how pieces look. "Internationalized" uses letters/symbols that are easier for non-Chinese readers.',
+      showAnimations:
+        'Slide pieces when they move. Turn off for instant moves and a snappier interface.',
+      showCoordinates:
+        'Show rank and file labels along the board edge to help you call out coordinates.',
+      showArrows:
+        'Draw arrows for the engine\'s suggested moves on the board. Turn off for a cleaner board.',
+      showChineseNotation:
+        'Use Chinese move notation (e.g. "炮二平五"); otherwise coordinate notation is used.',
+      parseUciInfo:
+        'Parse the engine\'s raw UCI output into readable depth, score, and principal variation instead of showing raw text.',
+      showEvaluationBar:
+        'Show a bar beside the board that visualizes which side is currently better.',
+      showPositionChart:
+        'Show a graph of the evaluation across the whole game so you can review how the position swung.',
+      showLuckIndex:
+        'Estimate each side\'s luck from revealed pieces — a measure of how good the flipped dark pieces were.',
+      enableSoundEffects:
+        'Play sounds for moves, captures, checks, and other events.',
+      soundVolume: 'Adjust how loud the sound effects are. Only active when sound is enabled.',
+      autosave:
+        'Automatically save the game to Autosave.json after every move so you never lose progress.',
+      useNewFenFormat:
+        'Use the new Jieqi-specific FEN format that records dark-piece info. Older engines may need this off.',
+      engineLogLineLimit:
+        'Maximum lines kept in the engine log; older lines are dropped to keep memory in check.',
+      validationTimeout:
+        'How long to wait for an engine to respond when loading it before treating it as invalid.',
     },
   },
 
@@ -716,6 +810,14 @@ prev.prev - Previous-previous move (supports infinite nesting)`,
     showMoves: 'Show Opening Book Moves',
     show: 'Show',
     preferHighPriority: 'Prefer high priority moves',
+    descriptions: {
+      enableInGame:
+        'During play, when it is the engine\'s turn and the position is in the book, play the book move directly instead of searching.',
+      showMoves:
+        'Mark the moves that are already recorded in the book for the current position on the board.',
+      preferHighPriority:
+        'When a position has several book moves, favor the ones you gave a higher priority; when off, moves are weighted by win rate and other stats.',
+    },
     totalPositions: 'Total Positions',
     totalMoves: 'Total Moves',
     allowedMoves: 'Allowed Moves',

@@ -326,6 +326,7 @@ prev.prev - 전전 수 (무한 중첩 지원)`,
     undockPanel: '패널 분리',
     dockPanel: '패널 고정',
     restorePanels: '패널 레이아웃 복원',
+    panelsRestored: '패널 레이아웃을 기본값으로 복원했습니다',
     flipBoard: '체스판 뒤집기',
     flipBoardBack: '방향 복원',
     ponderMode: '폰더(Ponder) 모드',
@@ -395,6 +396,8 @@ prev.prev - 전전 수 (무한 중첩 지원)`,
     confirmDeleteMessage:
       '엔진 "{name}"을(를) 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.',
     promptEngineName: '엔진의 고유 이름을 입력하세요:',
+    promptEnginePath:
+      '이 컴퓨터의 엔진 실행 파일 절대 경로를 입력하세요 (로컬 브리지가 실행합니다):',
     promptEngineArgs:
       '엔진의 명령줄 인수를 입력하세요 (선택 사항, 모르면 비워두세요):',
     promptHasNnue: '이 엔진은 NNUE 파일을 사용합니까? (y/n):',

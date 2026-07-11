@@ -1,6 +1,10 @@
 import { ref, onMounted, onUnmounted } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import {
+  spawnEngine,
+  sendToEngine,
+  killEngine,
+  onEngineOutput,
+} from './engine/engineBridge'
 import { useI18n } from 'vue-i18n'
 import { useConfigManager, type ManagedEngine } from './useConfigManager'
 import { useInterfaceSettings } from './useInterfaceSettings'
@@ -369,7 +373,7 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
 
     // Teardown previous engine if any
     if (isMatchRunning.value) stopMatch()
-    await invoke('kill_engine').catch(e =>
+    await killEngine().catch(e =>
       console.warn('Failed to kill previous engine:', e)
     )
 
@@ -387,8 +391,8 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
       }, validationTimeout.value)
 
       // Listen specifically for the jaiok signal
-      listen<string>('engine-output', event => {
-        if (event.payload.trim() === 'jaiok') {
+      onEngineOutput(line => {
+        if (line.trim() === 'jaiok') {
           console.log(
             `[DEBUG] Received jaiok for ${engine.name}. Validation successful.`
           )
@@ -408,7 +412,7 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
       console.log(
         `[DEBUG] Spawning JAI engine: ${engine.name}, Path: ${engine.path}, Args: ${engine.args}`
       )
-      await invoke('spawn_engine', {
+      await spawnEngine({
         path: engine.path,
         args: engine.args.split(' ').filter(Boolean),
       })
@@ -461,7 +465,7 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
       // Clear the last selected engine ID if loading fails
       const configManager = useConfigManager()
       await configManager.clearLastSelectedEngineId()
-      await invoke('kill_engine').catch(err =>
+      await killEngine().catch(err =>
         console.warn('Failed to kill invalid JAI engine:', err)
       )
     } finally {
@@ -473,7 +477,7 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
   const send = (cmd: string) => {
     engineOutput.value.push({ text: cmd, kind: 'sent' })
 
-    invoke('send_to_engine', { command: cmd }).catch(e => {
+    sendToEngine(cmd).catch(e => {
       console.warn('Failed to send to JAI engine:', e)
     })
   }
@@ -605,7 +609,7 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
       await new Promise(resolve => setTimeout(resolve, 100))
 
       // As a fallback, also kill the engine process
-      await invoke('kill_engine')
+      await killEngine()
       console.log(
         '[DEBUG] UNLOAD_JAI_ENGINE: Engine process terminated successfully'
       )
@@ -652,8 +656,7 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
   /* ---------- Listen to Output ---------- */
   onMounted(async () => {
     // Central listener for all engine output for logging/display
-    unlisten = await listen<string>('engine-output', ev => {
-      const raw_ln = ev.payload
+    unlisten = await onEngineOutput(raw_ln => {
       console.log(`[DEBUG] JAI_ENGINE_RAW_OUTPUT: ${raw_ln}`)
       queueOutputLine(raw_ln)
     })
@@ -688,7 +691,7 @@ export function useJaiEngine(_generateFen: () => string, gameState: any) {
 
   onUnmounted(() => {
     unlisten?.()
-    invoke('kill_engine') // Kill engine on component unmount
+    killEngine() // Kill engine on component unmount
     resetThrottling()
 
     // Clean up periodic cleanup interval

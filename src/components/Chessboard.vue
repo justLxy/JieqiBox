@@ -330,6 +330,7 @@
   import EvaluationChart from './EvaluationChart.vue'
   import { MATE_SCORE_BASE } from '@/utils/constants'
   import { isAndroidPlatform } from '@/utils/platform'
+  import { isTauri } from '@/utils/runtime'
   import { validateJieqiFen } from '@/utils/fenValidator'
   import { resolvePieceImage } from '@/utils/pieceImages'
 
@@ -1005,9 +1006,15 @@
     }
 
     try {
-      // Get FEN string from clipboard using backend command
-      const { invoke } = await import('@tauri-apps/api/core')
-      const clipboardText = await invoke('paste_from_clipboard')
+      // Get FEN string from clipboard. Use the native command under Tauri, and
+      // the Clipboard API in the browser.
+      let clipboardText: string
+      if (isTauri()) {
+        const { invoke } = await import('@tauri-apps/api/core')
+        clipboardText = await invoke<string>('paste_from_clipboard')
+      } else {
+        clipboardText = await navigator.clipboard.readText()
+      }
 
       // Clean the FEN string
       const trimmedFen = clipboardText.trim()

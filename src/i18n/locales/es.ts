@@ -329,6 +329,7 @@ prev.prev - La jugada ante-anterior (soporta anidación infinita)`,
     undockPanel: 'Desacoplar panel',
     dockPanel: 'Acoplar panel',
     restorePanels: 'Restaurar diseño',
+    panelsRestored: 'Diseño de paneles restaurado',
     flipBoard: 'Voltear tablero',
     flipBoardBack: 'Restaurar orientación',
     ponderMode: 'Modo Ponder',
@@ -398,6 +399,8 @@ prev.prev - La jugada ante-anterior (soporta anidación infinita)`,
     confirmDeleteMessage:
       '¿Está seguro de que desea eliminar el motor "{name}"? Esta acción no se puede deshacer.',
     promptEngineName: 'Por favor introduzca un nombre único para el motor:',
+    promptEnginePath:
+      'Introduzca la ruta absoluta del motor en esta máquina (el puente local lo ejecutará):',
     promptEngineArgs:
       'Por favor introduzca argumentos de línea de comandos (opcional):',
     promptHasNnue: '¿Este motor usa archivos NNUE? (y/n):',
