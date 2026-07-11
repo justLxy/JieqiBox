@@ -31,10 +31,49 @@ export const getBridgeUrl = (): string => {
 }
 
 interface BridgeMessage {
-  type: 'spawned' | 'output' | 'exit' | 'error'
+  type: 'engines' | 'spawned' | 'output' | 'exit' | 'error'
   line?: string
   code?: number
   message?: string
+  engines?: string[]
+}
+
+/** Retrieve executable engine files discovered under the bridge's ENGINES_DIR. */
+export const listWsEngines = async (): Promise<string[]> => {
+  const url = getBridgeUrl()
+  const ws = new WebSocket(url)
+
+  return new Promise<string[]>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      ws.close()
+      reject(new Error(`Could not reach the engine bridge at ${url}.`))
+    }, 5000)
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'list-engines' }))
+    }
+    ws.onerror = () => {
+      clearTimeout(timeout)
+      reject(new Error(`Failed to connect to the engine bridge at ${url}.`))
+    }
+    ws.onmessage = ev => {
+      let msg: BridgeMessage
+      try {
+        msg = JSON.parse(ev.data)
+      } catch {
+        return
+      }
+      if (msg.type === 'engines') {
+        clearTimeout(timeout)
+        ws.close()
+        resolve(Array.isArray(msg.engines) ? msg.engines : [])
+      } else if (msg.type === 'error') {
+        clearTimeout(timeout)
+        ws.close()
+        reject(new Error(msg.message || 'Engine bridge error'))
+      }
+    }
+  })
 }
 
 /**

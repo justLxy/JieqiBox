@@ -102,25 +102,24 @@ book are stored in the browser's `localStorage` instead of files.
 ```bash
 npm install
 
-# Terminal 1 — start the local engine bridge (listens on ws://127.0.0.1:8181)
+# Terminal 1 — start the bridge (uses the bundled PikaJieQi engine by default)
 npm run bridge
 
 # Terminal 2 — serve the web app
 npm run dev        # development, or: npm run build && npm run preview
 ```
 
-Open the printed URL in your browser. In **Engine Manager → Add Engine**, enter
-the **absolute path** of the engine binary on your machine (the same engine you
-would compile from the Pikafish jieqi branch). The bridge launches it and
-analysis works exactly like the desktop app.
+Open the printed URL in your browser. In **Engine Manager → Add Engine**, the
+app automatically lists the bundled `PikaJieQi-engine/PikaJieQi` engine;
+select it and analysis works exactly like the desktop app. To scan a different
+folder, start the bridge with `ENGINES_DIR=/path/to/engines npm run bridge`.
 
 ### Notes
 
 - The bridge binds to `127.0.0.1` only, so it is reachable solely from your
-  machine. It launches whatever executable path the browser sends — keep the
-  port local and do not expose it to your network. To restrict launchable
-  binaries to one folder, run it as
-  `ENGINES_DIR=/path/to/engines npm run bridge`.
+  machine. It only lists and launches files within its configured engine folder
+  (including subfolders). Keep the port local and do not expose it to your
+  network.
 - Change the bridge port with `PORT=9000 npm run bridge`, and point the app at
   it by setting `localStorage['jieqibox.bridgeUrl'] = 'ws://127.0.0.1:9000'` in
   the browser console.

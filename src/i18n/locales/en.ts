@@ -445,8 +445,10 @@ prev.prev - Previous-previous move (supports infinite nesting)`,
     confirmDeleteMessage:
       'Are you sure you want to delete the engine "{name}"? This action cannot be undone.',
     promptEngineName: 'Please enter a unique name for the engine:',
-    promptEnginePath:
-      'Enter the absolute path of the engine binary on this machine (the local bridge will launch it):',
+    detectedEngines: 'Detected Engines',
+    noDetectedEngines: 'No executable files were found in the engine folder.',
+    engineDiscoveryFailed:
+      'Could not detect engines. Start the local bridge with ENGINES_DIR=/path/to/engines npm run bridge.',
     promptEngineArgs:
       'Please enter command-line arguments for the engine (optional, leave empty if unknown):',
     promptHasNnue: 'Does this engine use NNUE files? (y/n):',

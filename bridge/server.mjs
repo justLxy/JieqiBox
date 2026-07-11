@@ -8,10 +8,12 @@
  *
  * Protocol (JSON messages over WebSocket):
  *   browser -> bridge:
+ *     { "type": "list-engines" }
  *     { "type": "spawn", "path": "/abs/path/to/engine", "args": ["..."] }
  *     { "type": "cmd",   "command": "go depth 20" }
  *     { "type": "kill" }
  *   bridge -> browser:
+ *     { "type": "engines", "engines": ["/abs/path/to/engine"] }
  *     { "type": "spawned" }              engine process started
  *     { "type": "output", "line": "…" }  one line from engine stdout/stderr
  *     { "type": "exit",   "code": 0 }    engine process ended
@@ -35,14 +37,16 @@ import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import path from 'node:path'
 import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const PORT = Number(process.env.PORT) || 8181
 const HOST = process.env.HOST || '127.0.0.1'
-// Optional: restrict launchable engine binaries to this directory (recommended
-// if you ever change HOST away from localhost).
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+// By default, use the bundled PikaJieQi engine folder. ENGINES_DIR can still
+// override it to use a different directory.
 const ENGINES_DIR = process.env.ENGINES_DIR
   ? path.resolve(process.env.ENGINES_DIR)
-  : null
+  : path.join(projectRoot, 'PikaJieQi-engine')
 
 const wss = new WebSocketServer({ host: HOST, port: PORT })
 
@@ -59,14 +63,18 @@ const resolveEnginePath = enginePath => {
   if (typeof enginePath !== 'string' || !enginePath.trim()) {
     throw new Error('Engine path is empty.')
   }
-  const resolved = path.resolve(enginePath)
+  let resolved = path.resolve(enginePath)
 
   if (ENGINES_DIR) {
-    // Ensure resolved path stays inside the allow-listed directory.
-    const rel = path.relative(ENGINES_DIR, resolved)
+    // Resolve symbolic links before checking the boundary so a link within the
+    // directory cannot launch a program outside it.
+    const root = fs.realpathSync(ENGINES_DIR)
+    const realPath = fs.realpathSync(resolved)
+    const rel = path.relative(root, realPath)
     if (rel.startsWith('..') || path.isAbsolute(rel)) {
-      throw new Error(`Engine path is outside ENGINES_DIR: ${resolved}`)
+      throw new Error(`Engine path is outside ENGINES_DIR: ${realPath}`)
     }
+    resolved = realPath
   }
 
   if (!fs.existsSync(resolved)) {
@@ -77,6 +85,40 @@ const resolveEnginePath = enginePath => {
     throw new Error(`Engine path is not a file: ${resolved}`)
   }
   return resolved
+}
+
+/**
+ * Find executable files below the configured engine directory. The bridge only
+ * exposes this list when ENGINES_DIR is set, so a browser cannot inspect other
+ * locations on the machine.
+ */
+const findEngines = () => {
+  if (!ENGINES_DIR) {
+    throw new Error('Set ENGINES_DIR before listing engine files.')
+  }
+  if (!fs.existsSync(ENGINES_DIR) || !fs.statSync(ENGINES_DIR).isDirectory()) {
+    throw new Error(`ENGINES_DIR is not a directory: ${ENGINES_DIR}`)
+  }
+
+  const engines = []
+  const scan = directory => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name)
+      if (entry.isDirectory()) {
+        scan(entryPath)
+      } else if (entry.isFile()) {
+        try {
+          fs.accessSync(entryPath, fs.constants.X_OK)
+          engines.push(entryPath)
+        } catch {
+          // Ignore files without execute permission.
+        }
+      }
+    }
+  }
+
+  scan(ENGINES_DIR)
+  return engines.sort((a, b) => a.localeCompare(b))
 }
 
 wss.on('connection', (ws, req) => {
@@ -152,6 +194,13 @@ wss.on('connection', (ws, req) => {
     }
 
     switch (msg.type) {
+      case 'list-engines':
+        try {
+          send({ type: 'engines', engines: findEngines() })
+        } catch (e) {
+          send({ type: 'error', message: e.message })
+        }
+        break
       case 'spawn':
         spawnEngine(msg.path, msg.args)
         break

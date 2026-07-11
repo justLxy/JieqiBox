@@ -82,6 +82,38 @@
       </v-card>
     </v-dialog>
 
+    <!-- Web bridge engine discovery dialog -->
+    <v-dialog v-model="webEngineDialog" max-width="680px" persistent>
+      <v-card>
+        <v-card-title>{{ $t('engineManager.detectedEngines') }}</v-card-title>
+        <v-card-text>
+          <v-progress-linear
+            v-if="isLoadingWebEngines"
+            indeterminate
+            color="blue-darken-1"
+          />
+          <v-list v-else-if="webEnginePaths.length" density="compact">
+            <v-list-item
+              v-for="enginePath in webEnginePaths"
+              :key="enginePath"
+              :title="enginePath.split('/').pop()"
+              :subtitle="enginePath"
+              @click="selectWebEngine(enginePath)"
+            />
+          </v-list>
+          <div v-else class="text-medium-emphasis">
+            {{ $t('engineManager.noDetectedEngines') }}
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn color="grey-darken-1" @click="webEngineDialog = false">{{
+            $t('common.close')
+          }}</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- UCI Options (Saved) Editor Dialog -->
     <v-dialog v-model="uciDialogVisible" max-width="700px" persistent>
       <v-card>
@@ -250,6 +282,9 @@
   // State
   const engines = ref<ManagedEngine[]>([])
   const editDialog = ref(false)
+  const webEngineDialog = ref(false)
+  const isLoadingWebEngines = ref(false)
+  const webEnginePaths = ref<string[]>([])
   const isEditing = ref(false)
   const editedEngine = ref<ManagedEngine>({
     id: '',
@@ -349,12 +384,28 @@
     await configManager.saveEngines(engines.value)
   }
 
-  // Web build: the browser cannot open a native file dialog, so prompt for the
-  // absolute path of the engine binary on the machine running the local bridge
-  // (see bridge/server.mjs). The bridge launches whatever path is entered here.
-  const addEngineWeb = () => {
-    const enginePath = prompt(t('engineManager.promptEnginePath'))
-    if (!enginePath) return
+  // The browser cannot inspect local files itself. Ask the bridge to list
+  // executables under its configured ENGINES_DIR instead.
+  const addEngineWeb = async () => {
+    webEngineDialog.value = true
+    isLoadingWebEngines.value = true
+    webEnginePaths.value = []
+    try {
+      const { listWsEngines } = await import('../composables/engine/wsEngine')
+      webEnginePaths.value = await listWsEngines()
+    } catch (error) {
+      webEngineDialog.value = false
+      alert(
+        `${t('engineManager.engineDiscoveryFailed')} ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    } finally {
+      isLoadingWebEngines.value = false
+    }
+  }
+
+  const selectWebEngine = (enginePath: string) => {
     const newId = `engine_${Date.now()}`
     editedEngine.value = {
       id: newId,
@@ -363,6 +414,7 @@
       args: '',
     }
     isEditing.value = false
+    webEngineDialog.value = false
     editDialog.value = true
   }
 

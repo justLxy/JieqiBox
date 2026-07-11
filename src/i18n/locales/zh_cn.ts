@@ -431,8 +431,10 @@ prev.prev - 上上步（支持无限嵌套）`,
     confirmDeleteTitle: '确认删除',
     confirmDeleteMessage: '您确定要删除引擎“{name}”吗？此操作无法撤销。',
     promptEngineName: '请输入引擎的唯一名称:',
-    promptEnginePath:
-      '请输入本机引擎程序的绝对路径（由本地桥接服务启动）：',
+    detectedEngines: '检测到的引擎',
+    noDetectedEngines: '引擎文件夹中没有可执行文件。',
+    engineDiscoveryFailed:
+      '无法检测引擎。请使用 ENGINES_DIR=/引擎文件夹 npm run bridge 启动本地桥接服务。',
     promptEngineArgs: '请输入引擎的命令行参数（可选，未知则留空）：',
     promptHasNnue: '此引擎是否使用NNUE文件？(y/n):',
     promptNnueFile: '请选择引擎的NNUE文件：',
